@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --loader ts-node/esm src/index.ts",
+    "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "seed:admin": "node --loader ts-node/esm src/scripts/seedAdmin.ts",
     "import:legacy": "node --loader ts-node/esm src/scripts/importLegacy.ts"

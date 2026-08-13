@@ -1,0 +1,70 @@
+import nodemailer from 'nodemailer';
+function escapeHtml(value) {
+    return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
+}
+function getMailConfig() {
+    const host = process.env.SMTP_HOST;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASSWORD;
+    if (!host || !user || !pass)
+        return null;
+    const port = Number(process.env.SMTP_PORT || 465);
+    return {
+        transport: nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE !== 'false', auth: { user, pass } }),
+        from: process.env.EMAIL_FROM || user,
+        notificationEmail: process.env.ORDER_NOTIFICATION_EMAIL || user,
+    };
+}
+function getOrderLines(order) {
+    try {
+        return JSON.parse(order.items);
+    }
+    catch {
+        return [];
+    }
+}
+function orderSummary(order) {
+    const items = getOrderLines(order)
+        .map((item) => `<li>${escapeHtml(item.name)} × ${item.quantity} — Rs. ${item.price * item.quantity}</li>`)
+        .join('');
+    return `<p><strong>Order #${order.id}</strong></p><ul>${items}</ul><p><strong>Total: Rs. ${order.total}</strong></p>`;
+}
+async function sendMail(to, subject, html) {
+    const config = getMailConfig();
+    if (!config)
+        return false;
+    try {
+        await config.transport.sendMail({ from: config.from, to, subject, html });
+        return true;
+    }
+    catch (error) {
+        console.error('Email delivery failed:', error instanceof Error ? error.message : error);
+        return false;
+    }
+}
+export async function sendLoginOtp(email, code) {
+    return sendMail(email, 'Your Fuddins login code', `<h2>Your Fuddins login code</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to sign in.</p><p>This code expires in 10 minutes. Do not share it with anyone.</p>`);
+}
+export async function sendOrderCreatedEmails(order, paymentUrl) {
+    const config = getMailConfig();
+    if (!config)
+        return;
+    const paymentSection = paymentUrl
+        ? `<p>To complete your payment securely, open this link: <a href="${escapeHtml(paymentUrl)}">Pay securely with Razorpay</a></p>`
+        : '<p>Your order has been received. Payment will be collected on delivery.</p>';
+    const summary = orderSummary(order);
+    await Promise.all([
+        sendMail(order.email, `Fuddins order #${order.id} received`, `<h2>Thank you, ${escapeHtml(order.customerName)}!</h2>${summary}${paymentSection}`),
+        sendMail(config.notificationEmail, `New Fuddins order #${order.id}`, `<h2>New order received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment: ${escapeHtml(order.paymentMethod)} / ${escapeHtml(order.paymentStatus)}</p>`),
+    ]);
+}
+export async function sendPaymentReceipt(order) {
+    const config = getMailConfig();
+    if (!config)
+        return;
+    const summary = orderSummary(order);
+    await Promise.all([
+        sendMail(order.email, `Payment received for Fuddins order #${order.id}`, `<h2>Payment successful</h2><p>Thank you, ${escapeHtml(order.customerName)}. Your payment has been received.</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
+        sendMail(config.notificationEmail, `Payment received: Fuddins order #${order.id}`, `<h2>Payment received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
+    ]);
+}
