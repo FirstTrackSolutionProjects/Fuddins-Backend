@@ -46,6 +46,19 @@ type LegacyProduct = {
 
 type LegacyProductBase = Pick<LegacyProduct, 'id' | 'name' | 'description' | 'fullDescription'>;
 
+type LegacyVariation = {
+  id: number;
+  parentId: number;
+  title: string | null;
+  price: number | null;
+  regularPrice: number | null;
+  salePrice: number | null;
+  sku: string | null;
+  stockQuantity: number | null;
+  stockStatus: string;
+  attributes: Record<string, string>;
+};
+
 type LegacyCoupon = {
   id: number;
   code: string;
@@ -319,6 +332,83 @@ async function loadLegacyProducts(connection: Connection, baseProducts: LegacyPr
   return Array.from(products.values());
 }
 
+async function loadLegacyProductVariations(connection: Connection, productIds: number[]) {
+  const variationsByParent = new Map<number, LegacyVariation[]>();
+  if (!productIds.length) {
+    return new Map<number, string>();
+  }
+
+  for (const ids of chunkArray(productIds)) {
+    const [variationRows] = await connection.query(
+      `SELECT ID id, post_parent parentId, post_title title
+       FROM wp_posts
+       WHERE post_type = 'product_variation'
+         AND post_status NOT IN ('trash', 'auto-draft')
+         AND post_parent IN (?)`,
+      [ids]
+    );
+    const variations = variationRows as Array<{ id: number; parentId: number; title: string | null }>;
+    if (!variations.length) {
+      continue;
+    }
+
+    const variationIds = variations.map((item) => item.id);
+    const metaByVariation = new Map<number, Map<string, string>>();
+    for (const variation of variations) {
+      metaByVariation.set(variation.id, new Map());
+    }
+
+    for (const variationIdChunk of chunkArray(variationIds)) {
+      const [metaRows] = await connection.query(
+        `SELECT post_id postId, meta_key metaKey, meta_value metaValue
+         FROM wp_postmeta
+         WHERE post_id IN (?)
+           AND (meta_key IN ('_price', '_regular_price', '_sale_price', '_sku', '_stock', '_stock_status')
+             OR meta_key LIKE 'attribute_%')`,
+        [variationIdChunk]
+      );
+
+      for (const row of metaRows as Array<{ postId: number; metaKey: string; metaValue: string }>) {
+        metaByVariation.get(row.postId)?.set(row.metaKey, row.metaValue);
+      }
+    }
+
+    for (const variation of variations) {
+      const meta = metaByVariation.get(variation.id) || new Map();
+      const attributes = Array.from(meta.entries())
+        .filter(([key]) => key.startsWith('attribute_'))
+        .reduce<Record<string, string>>((result, [key, value]) => {
+          const attributeName = key.replace(/^attribute_/, '').replace(/^pa_/, '').replace(/-/g, ' ');
+          result[attributeName] = decodeHtml(value);
+          return result;
+        }, {});
+
+      const item: LegacyVariation = {
+        id: variation.id,
+        parentId: variation.parentId,
+        title: cleanText(variation.title),
+        price: numberOrNull(meta.get('_price')),
+        regularPrice: numberOrNull(meta.get('_regular_price')),
+        salePrice: numberOrNull(meta.get('_sale_price')),
+        sku: meta.get('_sku') || null,
+        stockQuantity: numberOrNull(meta.get('_stock')),
+        stockStatus: meta.get('_stock_status') || 'instock',
+        attributes,
+      };
+      const current = variationsByParent.get(variation.parentId) || [];
+      current.push(item);
+      variationsByParent.set(variation.parentId, current);
+    }
+  }
+
+  return new Map(
+    Array.from(variationsByParent.entries()).map(([parentId, variations]) => [
+      parentId,
+      JSON.stringify(variations.sort((a, b) => a.id - b.id)),
+    ])
+  );
+}
+
 async function tableExists(connection: Connection, tableName: string) {
   const [rows] = await connection.query('SHOW TABLES LIKE ?', [tableName]);
   return (rows as unknown[]).length > 0;
@@ -381,6 +471,7 @@ async function importLegacy() {
        ORDER BY p.post_date DESC`
     );
     const legacyProducts = await loadLegacyProducts(connection, legacyProductRows as LegacyProductBase[]);
+    const variationsByProductId = await loadLegacyProductVariations(connection, legacyProducts.map((product) => product.id));
 
     console.log(`Products found: ${(legacyProducts as LegacyProduct[]).length}`);
     for (const item of legacyProducts as LegacyProduct[]) {
@@ -406,7 +497,7 @@ async function importLegacy() {
         stockQuantity: numberOrNull(item.stockQuantity),
         stockStatus: item.stockStatus || 'instock',
         attributes: item.attributes || null,
-        variations: null,
+        variations: variationsByProductId.get(item.id) || null,
         categoryId: category?.id || null,
       };
 
@@ -577,6 +668,26 @@ async function importLegacy() {
     importedVendors += 1;
   }
   console.log(`Vendors imported: ${importedVendors}`);
+
+  // WCFM stores ownership on the WordPress product author. Link imported
+  // products to their modern vendor after both datasets are available.
+  const [legacyProductOwners] = await connection.query(
+    `SELECT ID id, post_author authorId
+     FROM wp_posts
+     WHERE post_type = 'product'
+       AND post_status NOT IN ('trash', 'auto-draft')`
+  );
+  let linkedVendorProducts = 0;
+  for (const item of legacyProductOwners as Array<{ id: number; authorId: number }>) {
+    if (!item.authorId) continue;
+    const vendor = await Vendor.findOne({ where: { legacyVendorId: item.authorId } });
+    if (!vendor) continue;
+    const product = await Product.findOne({ where: { legacyProductId: item.id } });
+    if (!product || product.vendorId === vendor.id) continue;
+    await product.update({ vendorId: vendor.id });
+    linkedVendorProducts += 1;
+  }
+  console.log(`Vendor products linked: ${linkedVendorProducts}`);
 
   console.log('Importing orders...');
   let legacyOrders: LegacyOrder[] = [];
@@ -785,8 +896,8 @@ async function importLegacy() {
      FROM wp_posts
      WHERE post_status = 'publish'
        AND post_type = 'page'
-       AND post_name IN ('home', 'about', 'contact', 'privacy-policy', 'terms-conditions')
-     ORDER BY FIELD(post_name, 'home', 'about', 'contact', 'privacy-policy', 'terms-conditions')`
+       AND post_name <> ''
+     ORDER BY menu_order ASC, post_title ASC`
   );
 
   let importedPages = 0;

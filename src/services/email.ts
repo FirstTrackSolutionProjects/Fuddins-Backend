@@ -78,3 +78,13 @@ export async function sendPaymentReceipt(order: Order) {
     sendMail(config.notificationEmail, `Payment received: Fuddins order #${order.id}`, `<h2>Payment received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
   ]);
 }
+
+export async function sendContactNotification(payload: { name: string; email: string; phone?: string | null; subject?: string | null; message: string }) {
+  const config = getMailConfig();
+  if (!config) return;
+  await sendMail(
+    config.notificationEmail,
+    `Fuddins enquiry: ${payload.subject || 'Website enquiry'}`,
+    `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(payload.name)}</p><p><strong>Email:</strong> ${escapeHtml(payload.email)}</p><p><strong>Phone:</strong> ${escapeHtml(payload.phone || '')}</p><p><strong>Subject:</strong> ${escapeHtml(payload.subject || 'Website enquiry')}</p><p>${escapeHtml(payload.message)}</p>`
+  );
+}

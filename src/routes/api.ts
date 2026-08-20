@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Op } from 'sequelize';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
@@ -66,12 +67,34 @@ router.post('/users', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/products', async (_req, res) => {
-  const products = await Product.findAll({
-    include: [{ model: Category, as: 'category', attributes: ['id', 'name'] }],
-    order: [['createdAt', 'DESC']],
-  });
-  res.json(products);
+router.get('/products', async (req, res) => {
+  const hasPagination = typeof req.query.page !== 'undefined' || typeof req.query.limit !== 'undefined' || typeof req.query.search !== 'undefined' || typeof req.query.categoryId !== 'undefined';
+  const search = String(req.query.search || req.query.q || '').trim();
+  const categoryId = Number(req.query.categoryId);
+  const where: any = {};
+  if (search) {
+    const pattern = `%${search}%`;
+    where[Op.or] = [
+      { name: { [Op.like]: pattern } },
+      { sku: { [Op.like]: pattern } },
+      { brand: { [Op.like]: pattern } },
+      { description: { [Op.like]: pattern } },
+      { fullDescription: { [Op.like]: pattern } },
+    ];
+  }
+  if (Number.isInteger(categoryId) && categoryId > 0) where.categoryId = categoryId;
+  const include = [{ model: Category, as: 'category', attributes: ['id', 'name'] }];
+  const order: [string, string][] = [['createdAt', 'DESC']];
+
+  if (!hasPagination) {
+    const products = await Product.findAll({ where, include, order });
+    return res.json(products);
+  }
+
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 24));
+  const { rows, count } = await Product.findAndCountAll({ where, include, order, limit, offset: (page - 1) * limit, distinct: true });
+  return res.json({ items: rows, page, limit, total: count, totalPages: Math.ceil(count / limit) });
 });
 
 router.post('/products', authenticateToken, requireAdmin, async (req, res) => {

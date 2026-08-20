@@ -22,6 +22,10 @@ class Order extends Model {
   declare paymentProvider: string | null;
   declare paymentLinkId: string | null;
   declare paymentId: string | null;
+  declare deliveryUserId: number | null;
+  declare deliveryStatus: string;
+  declare deliveredAt: Date | null;
+  declare deliveryNote: string | null;
   declare createdAt: Date;
   declare updatedAt: Date;
 }
@@ -114,6 +118,10 @@ Order.init(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    deliveryUserId: { type: DataTypes.INTEGER, allowNull: true },
+    deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'unassigned' },
+    deliveredAt: { type: DataTypes.DATE, allowNull: true },
+    deliveryNote: { type: DataTypes.TEXT, allowNull: true },
   },
   {
     sequelize,

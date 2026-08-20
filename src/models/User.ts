@@ -11,6 +11,10 @@ class User extends Model {
   declare phone: string | null;
   declare billingAddress: string | null;
   declare shippingAddress: string | null;
+  declare deliveryVehicleType: string | null;
+  declare deliveryVehicleNumber: string | null;
+  declare deliveryStatus: string;
+  declare deliveryLastSeenAt: Date | null;
 }
 
 User.init(
@@ -55,6 +59,10 @@ User.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    deliveryVehicleType: { type: DataTypes.STRING, allowNull: true },
+    deliveryVehicleNumber: { type: DataTypes.STRING, allowNull: true },
+    deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'offline' },
+    deliveryLastSeenAt: { type: DataTypes.DATE, allowNull: true },
   },
   {
     sequelize,

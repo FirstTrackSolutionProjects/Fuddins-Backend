@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config/database.js';
 import Category from './Category.js';
+import Vendor from './Vendor.js';
 
 class Product extends Model {
   declare id: number;
@@ -20,6 +21,7 @@ class Product extends Model {
   declare attributes: string | null;
   declare variations: string | null;
   declare categoryId: number | null;
+  declare vendorId: number | null;
 }
 
 Product.init(
@@ -100,6 +102,14 @@ Product.init(
         key: 'id',
       },
     },
+    vendorId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: Vendor,
+        key: 'id',
+      },
+    },
   },
   {
     sequelize,
@@ -110,5 +120,7 @@ Product.init(
 
 Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
 Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
+Product.belongsTo(Vendor, { foreignKey: 'vendorId', as: 'vendor' });
+Vendor.hasMany(Product, { foreignKey: 'vendorId', as: 'products' });
 
 export default Product;

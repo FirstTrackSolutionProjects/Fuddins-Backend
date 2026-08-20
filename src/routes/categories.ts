@@ -5,7 +5,7 @@ import Category from '../models/Category.js';
 const router = Router();
 
 router.get('/', async (_req, res) => {
-  const categories = await Category.findAll();
+  const categories = await Category.findAll({ order: [['name', 'ASC']] });
   res.json(categories);
 });
 
