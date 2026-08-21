@@ -115,10 +115,10 @@ router.post('/password-reset/request', async (req, res) => {
         if (!user)
             return res.json({ message: 'If an account exists for this email, a reset code has been sent.' });
         const code = crypto.randomInt(100000, 1000000).toString();
-        await AuthOtp.create({ channel: 'password_reset', target: email, codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
         const sent = await sendPasswordResetOtp(email, code);
         if (!sent)
             return res.status(503).json({ error: 'Email service is not configured. Please try again later.' });
+        await AuthOtp.create({ channel: 'password_reset', target: email, codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
         const body = { message: 'Reset code sent. It expires in 10 minutes.' };
         if (process.env.OTP_DEBUG_RESPONSE === 'true' && process.env.NODE_ENV !== 'production')
             body.testCode = code;
@@ -223,10 +223,10 @@ router.post('/email-otp/request', async (req, res) => {
         if (latest)
             return res.status(429).json({ error: 'Please wait one minute before requesting another code' });
         const code = crypto.randomInt(100000, 1000000).toString();
-        await AuthOtp.create({ channel: 'email', target: email, codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
         const sent = await sendLoginOtp(email, code);
         if (!sent)
             return res.status(503).json({ error: 'Email service is not configured. Please try again later.' });
+        await AuthOtp.create({ channel: 'email', target: email, codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
         const body = { message: 'Verification code sent. It expires in 10 minutes.' };
         if (process.env.OTP_DEBUG_RESPONSE === 'true' && process.env.NODE_ENV !== 'production')
             body.testCode = code;

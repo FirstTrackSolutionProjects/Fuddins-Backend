@@ -14,8 +14,18 @@ function getMailConfig() {
   if (!host || !user || !pass) return null;
 
   const port = Number(process.env.SMTP_PORT || 465);
+  const secureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+  const secure = secureSetting ? secureSetting === 'true' : port === 465;
   return {
-    transport: nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE !== 'false', auth: { user, pass } }),
+    transport: nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 20_000,
+    }),
     from: process.env.EMAIL_FROM || user,
     notificationEmail: process.env.ORDER_NOTIFICATION_EMAIL || user,
   };
@@ -38,12 +48,30 @@ function orderSummary(order: Order) {
 
 async function sendMail(to: string, subject: string, html: string) {
   const config = getMailConfig();
-  if (!config) return false;
+  if (!config) {
+    console.error('Email delivery is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD.');
+    return false;
+  }
   try {
     await config.transport.sendMail({ from: config.from, to, subject, html });
     return true;
   } catch (error) {
-    console.error('Email delivery failed:', error instanceof Error ? error.message : error);
+    const details = error as Error & { code?: string; response?: string };
+    console.error('Email delivery failed:', details.message || error, details.code || '', details.response || '');
+    return false;
+  }
+}
+
+export async function verifyMailTransport() {
+  const config = getMailConfig();
+  if (!config) return false;
+  try {
+    await config.transport.verify();
+    console.log('SMTP connection verified');
+    return true;
+  } catch (error) {
+    const details = error as Error & { code?: string; response?: string };
+    console.error('SMTP connection verification failed:', details.message || error, details.code || '', details.response || '');
     return false;
   }
 }

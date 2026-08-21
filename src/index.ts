@@ -18,6 +18,7 @@ import uploadsRoutes from './routes/uploads.js';
 import { createRazorpayPaymentLink, getPaymentStatus, razorpayWebhook } from './routes/payments.js';
 import { optionalAuthenticateToken } from './middleware/auth.js';
 import { ensureCurrentSchema } from './config/schemaMigrations.js';
+import { verifyMailTransport } from './services/email.js';
 
 dotenv.config();
 
@@ -76,6 +77,9 @@ async function start() {
     console.error('Backend server failed to start:', error);
     process.exitCode = 1;
   });
+  // Do not block startup on SMTP, but make bad Railway SMTP credentials
+  // immediately visible in deploy logs instead of silently dropping OTPs.
+  void verifyMailTransport();
 }
 
 start();
