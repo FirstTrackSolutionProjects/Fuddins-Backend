@@ -56,6 +56,14 @@ export async function sendLoginOtp(email: string, code: string) {
   );
 }
 
+export async function sendPasswordResetOtp(email: string, code: string) {
+  return sendMail(
+    email,
+    'Reset your Fuddins password',
+    `<h2>Reset your Fuddins password</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to choose a new password.</p><p>This code expires in 10 minutes. If you did not request this, you can ignore this email.</p>`
+  );
+}
+
 export async function sendOrderCreatedEmails(order: Order, paymentUrl?: string) {
   const config = getMailConfig();
   if (!config) return;

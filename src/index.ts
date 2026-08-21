@@ -17,6 +17,7 @@ import partnerRoutes from './routes/partner.js';
 import uploadsRoutes from './routes/uploads.js';
 import { createRazorpayPaymentLink, getPaymentStatus, razorpayWebhook } from './routes/payments.js';
 import { optionalAuthenticateToken } from './middleware/auth.js';
+import { ensureCurrentSchema } from './config/schemaMigrations.js';
 
 dotenv.config();
 
@@ -58,6 +59,7 @@ async function start() {
     await ensureDatabase();
     await sequelize.authenticate();
     await sequelize.sync({ alter: syncAlter });
+    await ensureCurrentSchema();
     console.log('Database connected and synced');
   } catch (error) {
     console.error('Database connection failed:', error);

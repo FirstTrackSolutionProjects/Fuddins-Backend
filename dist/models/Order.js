@@ -89,6 +89,10 @@ Order.init({
         type: DataTypes.STRING,
         allowNull: true,
     },
+    deliveryUserId: { type: DataTypes.INTEGER, allowNull: true },
+    deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'unassigned' },
+    deliveredAt: { type: DataTypes.DATE, allowNull: true },
+    deliveryNote: { type: DataTypes.TEXT, allowNull: true },
 }, {
     sequelize,
     tableName: 'orders',

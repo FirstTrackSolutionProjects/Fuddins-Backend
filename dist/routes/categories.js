@@ -3,7 +3,7 @@ import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import Category from '../models/Category.js';
 const router = Router();
 router.get('/', async (_req, res) => {
-    const categories = await Category.findAll();
+    const categories = await Category.findAll({ order: [['name', 'ASC']] });
     res.json(categories);
 });
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {

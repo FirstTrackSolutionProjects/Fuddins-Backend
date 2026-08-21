@@ -43,9 +43,21 @@ User.init({
         type: DataTypes.TEXT,
         allowNull: true,
     },
+    deliveryVehicleType: { type: DataTypes.STRING, allowNull: true },
+    deliveryVehicleNumber: { type: DataTypes.STRING, allowNull: true },
+    deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'offline' },
+    deliveryLastSeenAt: { type: DataTypes.DATE, allowNull: true },
 }, {
     sequelize,
     tableName: 'users',
     timestamps: true,
+    // Delivery profile fields were added after the original customer import.
+    // Keep them out of normal customer/auth SELECT * queries so an older
+    // database remains usable while the startup migration adds the columns.
+    defaultScope: {
+        attributes: {
+            exclude: ['deliveryVehicleType', 'deliveryVehicleNumber', 'deliveryStatus', 'deliveryLastSeenAt'],
+        },
+    },
 });
 export default User;

@@ -45,6 +45,9 @@ async function sendMail(to, subject, html) {
 export async function sendLoginOtp(email, code) {
     return sendMail(email, 'Your Fuddins login code', `<h2>Your Fuddins login code</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to sign in.</p><p>This code expires in 10 minutes. Do not share it with anyone.</p>`);
 }
+export async function sendPasswordResetOtp(email, code) {
+    return sendMail(email, 'Reset your Fuddins password', `<h2>Reset your Fuddins password</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to choose a new password.</p><p>This code expires in 10 minutes. If you did not request this, you can ignore this email.</p>`);
+}
 export async function sendOrderCreatedEmails(order, paymentUrl) {
     const config = getMailConfig();
     if (!config)
@@ -67,4 +70,10 @@ export async function sendPaymentReceipt(order) {
         sendMail(order.email, `Payment received for Fuddins order #${order.id}`, `<h2>Payment successful</h2><p>Thank you, ${escapeHtml(order.customerName)}. Your payment has been received.</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
         sendMail(config.notificationEmail, `Payment received: Fuddins order #${order.id}`, `<h2>Payment received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
     ]);
+}
+export async function sendContactNotification(payload) {
+    const config = getMailConfig();
+    if (!config)
+        return;
+    await sendMail(config.notificationEmail, `Fuddins enquiry: ${payload.subject || 'Website enquiry'}`, `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(payload.name)}</p><p><strong>Email:</strong> ${escapeHtml(payload.email)}</p><p><strong>Phone:</strong> ${escapeHtml(payload.phone || '')}</p><p><strong>Subject:</strong> ${escapeHtml(payload.subject || 'Website enquiry')}</p><p>${escapeHtml(payload.message)}</p>`);
 }

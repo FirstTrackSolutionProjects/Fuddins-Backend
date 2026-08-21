@@ -6,9 +6,11 @@ import RewardTransaction from '../models/RewardTransaction.js';
 import User from '../models/User.js';
 import Vendor from '../models/Vendor.js';
 import VendorSettlement from '../models/VendorSettlement.js';
+import VendorPayoutRequest from '../models/VendorPayoutRequest.js';
 import WalletTransaction from '../models/WalletTransaction.js';
 import { generateInvoicePdf } from '../services/invoice.js';
 import { addRewardTransaction, addWalletTransaction, rewardBalance, walletBalance } from '../services/loyalty.js';
+import { hashPassword } from '../utils/password.js';
 const router = Router();
 function requestedUserId(req) {
     const user = req.user;
@@ -98,6 +100,27 @@ router.get('/vendors', authenticateToken, requireAdmin, async (_req, res) => {
     });
     res.json(vendors);
 });
+router.post('/vendors/register', async (req, res) => {
+    try {
+        const storeName = String(req.body.storeName || '').trim();
+        const email = String(req.body.email || '').trim().toLowerCase();
+        const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : null;
+        const address = typeof req.body.address === 'string' ? req.body.address.trim() : null;
+        const profile = typeof req.body.profile === 'string' ? req.body.profile.trim() : null;
+        if (!storeName || !/^\S+@\S+\.\S+$/.test(email)) {
+            return res.status(400).json({ error: 'Store name and valid email are required' });
+        }
+        const existing = await Vendor.findOne({ where: { email } });
+        if (existing) {
+            return res.status(409).json({ error: 'Vendor request already exists for this email' });
+        }
+        const vendor = await Vendor.create({ storeName, email, phone, address, profile, status: 'pending' });
+        res.status(201).json({ id: vendor.id, message: 'Vendor registration received' });
+    }
+    catch {
+        res.status(400).json({ error: 'Unable to submit vendor registration' });
+    }
+});
 router.post('/vendors', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const storeName = String(req.body.storeName || '').trim();
@@ -118,6 +141,30 @@ router.post('/vendors', authenticateToken, requireAdmin, async (req, res) => {
         res.status(400).json({ error: 'Unable to create vendor' });
     }
 });
+router.post('/vendors/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const vendor = await Vendor.findByPk(Number(req.params.id));
+        if (!vendor)
+            return res.status(404).json({ error: 'Vendor not found' });
+        const password = String(req.body.password || '');
+        if (password.length < 8)
+            return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        if (!vendor.email)
+            return res.status(400).json({ error: 'Vendor email is required before approval' });
+        let user = await User.findOne({ where: { email: vendor.email } });
+        if (user) {
+            await user.update({ name: vendor.storeName, password: hashPassword(password), role: 'vendor' });
+        }
+        else {
+            user = await User.create({ name: vendor.storeName, email: vendor.email, password: hashPassword(password), role: 'vendor', phone: vendor.phone, billingAddress: vendor.address, shippingAddress: vendor.address });
+        }
+        await vendor.update({ userId: user.id, status: 'active' });
+        res.json({ vendor, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    }
+    catch {
+        res.status(400).json({ error: 'Unable to approve vendor' });
+    }
+});
 router.put('/vendors/:id', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const vendor = await Vendor.findByPk(Number(req.params.id));
@@ -130,6 +177,11 @@ router.put('/vendors/:id', authenticateToken, requireAdmin, async (req, res) => 
             address: typeof req.body.address === 'string' ? req.body.address : vendor.address,
             status: typeof req.body.status === 'string' ? req.body.status : vendor.status,
             profile: typeof req.body.profile === 'string' ? req.body.profile : vendor.profile,
+            membershipPlan: typeof req.body.membershipPlan === 'string' ? req.body.membershipPlan : vendor.membershipPlan,
+            membershipStatus: typeof req.body.membershipStatus === 'string' ? req.body.membershipStatus : vendor.membershipStatus,
+            membershipPaymentStatus: typeof req.body.membershipPaymentStatus === 'string' ? req.body.membershipPaymentStatus : vendor.membershipPaymentStatus,
+            membershipFee: Number.isFinite(Number(req.body.membershipFee)) ? Math.max(0, Number(req.body.membershipFee)) : vendor.membershipFee,
+            membershipStartedAt: req.body.membershipStatus === 'active' && !vendor.membershipStartedAt ? new Date() : vendor.membershipStartedAt,
         });
         res.json(vendor);
     }
@@ -188,6 +240,25 @@ router.put('/vendor-settlements/:id/status', authenticateToken, requireAdmin, as
     }
     catch {
         res.status(400).json({ error: 'Unable to update settlement' });
+    }
+});
+router.get('/vendor-payout-requests', authenticateToken, requireAdmin, async (_req, res) => {
+    const requests = await VendorPayoutRequest.findAll({ include: [{ model: Vendor, as: 'vendor', attributes: ['id', 'storeName', 'email', 'payoutMethod', 'payoutUpi', 'payoutAccountName', 'payoutAccountNumber', 'payoutIfsc'] }], order: [['createdAt', 'DESC']], limit: 200 });
+    res.json(requests);
+});
+router.put('/vendor-payout-requests/:id/status', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const request = await VendorPayoutRequest.findByPk(Number(req.params.id));
+        if (!request)
+            return res.status(404).json({ error: 'Payout request not found' });
+        const status = String(req.body.status || '').trim();
+        if (!['requested', 'processing', 'paid', 'rejected'].includes(status))
+            return res.status(400).json({ error: 'Invalid payout status' });
+        await request.update({ status, notes: typeof req.body.notes === 'string' ? req.body.notes : request.notes, processedAt: ['paid', 'rejected'].includes(status) ? new Date() : request.processedAt });
+        res.json(request);
+    }
+    catch {
+        res.status(400).json({ error: 'Unable to update payout request' });
     }
 });
 router.get('/invoices', authenticateToken, requireAdmin, async (_req, res) => {

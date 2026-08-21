@@ -3,10 +3,11 @@ import { Op } from 'sequelize';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import Coupon from '../models/Coupon.js';
+import Vendor from '../models/Vendor.js';
 import { sendOrderCreatedEmails, sendPaymentReceipt } from '../services/email.js';
 import { ensureInvoice } from '../services/invoice.js';
-import { awardOrderRewards } from '../services/loyalty.js';
-function razorpayConfig() {
+import { awardOrderRewards, redeemOrderBalances, refundOrderBalances, validateOrderRedemption } from '../services/loyalty.js';
+export function razorpayConfig() {
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!keyId || !keySecret)
@@ -19,28 +20,56 @@ async function calculateItems(items) {
     const quantities = new Map();
     for (const item of items) {
         const productId = Number(item.productId);
+        const variationId = item.variationId ? Number(item.variationId) : null;
         const quantity = Number(item.quantity);
         if (!Number.isInteger(productId) || !Number.isInteger(quantity) || quantity < 1)
             throw new Error('Cart contains an invalid item');
-        quantities.set(productId, (quantities.get(productId) || 0) + quantity);
+        const key = `${productId}:${variationId || 'default'}`;
+        const current = quantities.get(key);
+        quantities.set(key, { productId, variationId, quantity: (current?.quantity || 0) + quantity });
     }
-    const products = await Product.findAll({ where: { id: { [Op.in]: [...quantities.keys()] } } });
-    if (products.length !== quantities.size)
+    const productIds = Array.from(new Set(Array.from(quantities.values()).map((item) => item.productId)));
+    const products = await Product.findAll({ where: { id: { [Op.in]: productIds } } });
+    const productById = new Map(products.map((product) => [product.id, product]));
+    if (products.length !== productIds.length)
         throw new Error('One or more products are no longer available');
-    const normalizedItems = products.map((product) => {
-        const quantity = quantities.get(product.id) || 0;
-        if (product.stockStatus === 'outofstock' || (product.stockQuantity !== null && product.stockQuantity < quantity))
+    const normalizedItems = Array.from(quantities.values()).map((cartItem) => {
+        const product = productById.get(cartItem.productId);
+        if (!product)
+            throw new Error('One or more products are no longer available');
+        const variation = cartItem.variationId ? parseVariations(product).find((item) => item.id === cartItem.variationId) : null;
+        if (cartItem.variationId && !variation)
+            throw new Error(`${product.name} option is no longer available`);
+        const stockStatus = variation?.stockStatus || product.stockStatus;
+        const stockQuantity = variation?.stockQuantity ?? product.stockQuantity;
+        if (stockStatus === 'outofstock' || (stockQuantity !== null && stockQuantity < cartItem.quantity))
             throw new Error(`${product.name} is out of stock`);
         return {
             productId: product.id,
-            name: product.name,
-            price: Number(product.salePrice || product.price),
-            quantity,
-            sku: product.sku || null,
+            variationId: variation?.id || null,
+            name: variation ? `${product.name} - ${variationLabel(variation)}` : product.name,
+            price: Number(variation?.salePrice || variation?.price || product.salePrice || product.price),
+            quantity: cartItem.quantity,
+            sku: variation?.sku || product.sku || null,
         };
     });
     const subtotal = normalizedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
     return { normalizedItems, products, quantities, subtotal };
+}
+function parseVariations(product) {
+    if (!product.variations)
+        return [];
+    try {
+        const variations = JSON.parse(product.variations);
+        return Array.isArray(variations) ? variations : [];
+    }
+    catch {
+        return [];
+    }
+}
+function variationLabel(variation) {
+    const values = Object.values(variation.attributes || {}).filter(Boolean);
+    return values.length ? values.join(' / ') : variation.title || `Option #${variation.id}`;
 }
 async function applyCoupon(code, subtotal) {
     const couponCode = typeof code === 'string' ? code.trim().toUpperCase() : '';
@@ -61,7 +90,19 @@ export async function createRazorpayPaymentLink(req, res) {
         const { coupon, discountTotal } = await applyCoupon(req.body.couponCode, subtotal);
         const shippingTotal = Number(req.body.shippingTotal || 0);
         const taxTotal = Number(req.body.taxTotal || 0);
-        const total = Math.max(subtotal - discountTotal + shippingTotal + taxTotal, 0);
+        const orderTotalBeforeRedemption = Math.max(subtotal - discountTotal + shippingTotal + taxTotal, 0);
+        const requestedWallet = Number(req.body.walletAmount || 0);
+        const requestedPoints = Number(req.body.rewardPoints || 0);
+        const authUser = req.user;
+        let redemption = { walletAmount: 0, rewardPoints: 0 };
+        if (requestedWallet > 0 || requestedPoints > 0) {
+            if (!authUser)
+                return res.status(401).json({ error: 'Please login to use wallet or reward points' });
+            if (authUser.email.toLowerCase() !== String(req.body.email).trim().toLowerCase())
+                return res.status(403).json({ error: 'Checkout email must match your account' });
+            redemption = await validateOrderRedemption(authUser.id, orderTotalBeforeRedemption, requestedWallet, requestedPoints);
+        }
+        const total = Math.max(orderTotalBeforeRedemption - redemption.walletAmount - redemption.rewardPoints, 0);
         const order = await Order.create({
             customerName: req.body.customerName.trim(),
             email: req.body.email.trim().toLowerCase(),
@@ -104,10 +145,27 @@ export async function createRazorpayPaymentLink(req, res) {
             return res.status(502).json({ error: link.error?.description || 'Unable to create Razorpay payment link' });
         }
         await order.update({ paymentLinkId: link.id });
+        if (authUser && (redemption.walletAmount > 0 || redemption.rewardPoints > 0)) {
+            await redeemOrderBalances(authUser.id, order.id, orderTotalBeforeRedemption, redemption.walletAmount, redemption.rewardPoints);
+        }
         for (const product of products) {
-            const quantity = quantities.get(product.id) || 0;
-            if (product.stockQuantity !== null)
-                await product.update({ stockQuantity: Math.max(product.stockQuantity - quantity, 0) });
+            const productCartItems = Array.from(quantities.values()).filter((item) => item.productId === product.id);
+            const parentQuantity = productCartItems.filter((item) => !item.variationId).reduce((sum, item) => sum + item.quantity, 0);
+            const updatePayload = {};
+            if (product.stockQuantity !== null && parentQuantity > 0)
+                updatePayload.stockQuantity = Math.max(product.stockQuantity - parentQuantity, 0);
+            const variationItems = productCartItems.filter((item) => item.variationId);
+            if (variationItems.length) {
+                const variations = parseVariations(product).map((variation) => {
+                    const quantity = variationItems.filter((item) => item.variationId === variation.id).reduce((sum, item) => sum + item.quantity, 0);
+                    if (!quantity || variation.stockQuantity === null || typeof variation.stockQuantity === 'undefined')
+                        return variation;
+                    return { ...variation, stockQuantity: Math.max(variation.stockQuantity - quantity, 0) };
+                });
+                updatePayload.variations = JSON.stringify(variations);
+            }
+            if (Object.keys(updatePayload).length)
+                await product.update(updatePayload);
         }
         if (coupon)
             await coupon.increment('usedCount');
@@ -138,6 +196,7 @@ export async function getPaymentStatus(req, res) {
             }
             else if (response.ok && (link.status === 'cancelled' || link.status === 'expired')) {
                 await order.update({ paymentStatus: 'failed' });
+                await refundOrderBalances(order.id);
             }
         }
         catch (error) {
@@ -170,6 +229,12 @@ export async function razorpayWebhook(req, res) {
                     void awardOrderRewards(order);
                     void sendPaymentReceipt(order);
                 }
+                if (status === 'failed')
+                    await refundOrderBalances(order.id);
+            }
+            const vendor = await Vendor.findOne({ where: { membershipPaymentLinkId: paymentLink.id } });
+            if (vendor) {
+                await vendor.update({ membershipPaymentStatus: status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending', membershipStatus: status === 'paid' ? 'active' : vendor.membershipStatus, membershipPaymentId: event.payload?.payment?.entity?.id || vendor.membershipPaymentId, membershipStartedAt: status === 'paid' && !vendor.membershipStartedAt ? new Date() : vendor.membershipStartedAt, membershipExpiresAt: status === 'paid' && !vendor.membershipExpiresAt ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : vendor.membershipExpiresAt });
             }
         }
         res.status(200).json({ received: true });
