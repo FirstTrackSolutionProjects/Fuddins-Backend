@@ -7,20 +7,35 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
 }
 
-function getMailConfig() {
+type MailConfig = {
+  transport: nodemailer.Transporter;
+  from: string;
+  notificationEmail: string;
+  port: number;
+  secure: boolean;
+};
+
+function getMailConfigs(): MailConfig[] {
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASSWORD;
-  if (!host || !user || !pass) return null;
+  if (!host || !user || !pass) return [];
 
   const port = Number(process.env.SMTP_PORT || 465);
   const secureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
   const secure = secureSetting ? secureSetting === 'true' : port === 465;
-  return {
+  const candidates = [{ port, secure }];
+  // Some hosted platforms throttle/block implicit TLS on port 465. Hostinger
+  // also supports STARTTLS on 587, so retry that transport automatically.
+  if (port === 465) candidates.push({ port: 587, secure: false });
+  if (port === 587) candidates.push({ port: 465, secure: true });
+
+  return candidates.map((candidate) => ({
     transport: nodemailer.createTransport({
       host,
-      port,
-      secure,
+      port: candidate.port,
+      secure: candidate.secure,
+      requireTLS: !candidate.secure,
       auth: { user, pass },
       connectionTimeout: 15_000,
       greetingTimeout: 15_000,
@@ -28,7 +43,13 @@ function getMailConfig() {
     }),
     from: process.env.EMAIL_FROM || user,
     notificationEmail: process.env.ORDER_NOTIFICATION_EMAIL || user,
-  };
+    port: candidate.port,
+    secure: candidate.secure,
+  }));
+}
+
+function getMailConfig() {
+  return getMailConfigs()[0] || null;
 }
 
 function getOrderLines(order: Order) {
@@ -47,33 +68,36 @@ function orderSummary(order: Order) {
 }
 
 async function sendMail(to: string, subject: string, html: string) {
-  const config = getMailConfig();
-  if (!config) {
+  const configs = getMailConfigs();
+  if (!configs.length) {
     console.error('Email delivery is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD.');
     return false;
   }
-  try {
-    await config.transport.sendMail({ from: config.from, to, subject, html });
-    return true;
-  } catch (error) {
-    const details = error as Error & { code?: string; response?: string };
-    console.error('Email delivery failed:', details.message || error, details.code || '', details.response || '');
-    return false;
+  for (const config of configs) {
+    try {
+      await config.transport.sendMail({ from: config.from, to, subject, html });
+      return true;
+    } catch (error) {
+      const details = error as Error & { code?: string; response?: string };
+      console.error(`Email delivery failed on SMTP port ${config.port}:`, details.message || error, details.code || '', details.response || '');
+    }
   }
+  return false;
 }
 
 export async function verifyMailTransport() {
-  const config = getMailConfig();
-  if (!config) return false;
-  try {
-    await config.transport.verify();
-    console.log('SMTP connection verified');
-    return true;
-  } catch (error) {
-    const details = error as Error & { code?: string; response?: string };
-    console.error('SMTP connection verification failed:', details.message || error, details.code || '', details.response || '');
-    return false;
+  const configs = getMailConfigs();
+  for (const config of configs) {
+    try {
+      await config.transport.verify();
+      console.log(`SMTP connection verified on port ${config.port}`);
+      return true;
+    } catch (error) {
+      const details = error as Error & { code?: string; response?: string };
+      console.error(`SMTP connection verification failed on port ${config.port}:`, details.message || error, details.code || '', details.response || '');
+    }
   }
+  return false;
 }
 
 export async function sendLoginOtp(email: string, code: string) {

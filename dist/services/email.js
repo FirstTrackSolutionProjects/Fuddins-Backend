@@ -2,20 +2,28 @@ import nodemailer from 'nodemailer';
 function escapeHtml(value) {
     return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
 }
-function getMailConfig() {
+function getMailConfigs() {
     const host = process.env.SMTP_HOST;
     const user = process.env.SMTP_USER;
     const pass = process.env.SMTP_PASSWORD;
     if (!host || !user || !pass)
-        return null;
+        return [];
     const port = Number(process.env.SMTP_PORT || 465);
     const secureSetting = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
     const secure = secureSetting ? secureSetting === 'true' : port === 465;
-    return {
+    const candidates = [{ port, secure }];
+    // Some hosted platforms throttle/block implicit TLS on port 465. Hostinger
+    // also supports STARTTLS on 587, so retry that transport automatically.
+    if (port === 465)
+        candidates.push({ port: 587, secure: false });
+    if (port === 587)
+        candidates.push({ port: 465, secure: true });
+    return candidates.map((candidate) => ({
         transport: nodemailer.createTransport({
             host,
-            port,
-            secure,
+            port: candidate.port,
+            secure: candidate.secure,
+            requireTLS: !candidate.secure,
             auth: { user, pass },
             connectionTimeout: 15_000,
             greetingTimeout: 15_000,
@@ -23,7 +31,12 @@ function getMailConfig() {
         }),
         from: process.env.EMAIL_FROM || user,
         notificationEmail: process.env.ORDER_NOTIFICATION_EMAIL || user,
-    };
+        port: candidate.port,
+        secure: candidate.secure,
+    }));
+}
+function getMailConfig() {
+    return getMailConfigs()[0] || null;
 }
 function getOrderLines(order) {
     try {
@@ -40,35 +53,37 @@ function orderSummary(order) {
     return `<p><strong>Order #${order.id}</strong></p><ul>${items}</ul><p><strong>Total: Rs. ${order.total}</strong></p>`;
 }
 async function sendMail(to, subject, html) {
-    const config = getMailConfig();
-    if (!config) {
+    const configs = getMailConfigs();
+    if (!configs.length) {
         console.error('Email delivery is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASSWORD.');
         return false;
     }
-    try {
-        await config.transport.sendMail({ from: config.from, to, subject, html });
-        return true;
+    for (const config of configs) {
+        try {
+            await config.transport.sendMail({ from: config.from, to, subject, html });
+            return true;
+        }
+        catch (error) {
+            const details = error;
+            console.error(`Email delivery failed on SMTP port ${config.port}:`, details.message || error, details.code || '', details.response || '');
+        }
     }
-    catch (error) {
-        const details = error;
-        console.error('Email delivery failed:', details.message || error, details.code || '', details.response || '');
-        return false;
-    }
+    return false;
 }
 export async function verifyMailTransport() {
-    const config = getMailConfig();
-    if (!config)
-        return false;
-    try {
-        await config.transport.verify();
-        console.log('SMTP connection verified');
-        return true;
+    const configs = getMailConfigs();
+    for (const config of configs) {
+        try {
+            await config.transport.verify();
+            console.log(`SMTP connection verified on port ${config.port}`);
+            return true;
+        }
+        catch (error) {
+            const details = error;
+            console.error(`SMTP connection verification failed on port ${config.port}:`, details.message || error, details.code || '', details.response || '');
+        }
     }
-    catch (error) {
-        const details = error;
-        console.error('SMTP connection verification failed:', details.message || error, details.code || '', details.response || '');
-        return false;
-    }
+    return false;
 }
 export async function sendLoginOtp(email, code) {
     return sendMail(email, 'Your Fuddins login code', `<h2>Your Fuddins login code</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to sign in.</p><p>This code expires in 10 minutes. Do not share it with anyone.</p>`);

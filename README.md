@@ -70,8 +70,9 @@ Customer order confirmations, Razorpay payment-link emails, payment receipts, an
 
 ```bash
 SMTP_HOST=smtp.hostinger.com
-SMTP_PORT=465
-SMTP_SECURE=true
+# STARTTLS on 587 is recommended for hosted deployments such as Railway.
+SMTP_PORT=587
+SMTP_SECURE=false
 SMTP_USER=info@yourdomain.com
 SMTP_PASSWORD=your-rotated-mailbox-password
 EMAIL_FROM="Fuddins <info@yourdomain.com>"
