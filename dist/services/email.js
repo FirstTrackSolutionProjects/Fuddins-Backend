@@ -1,4 +1,6 @@
 import nodemailer from 'nodemailer';
+import dns from 'node:dns';
+import net from 'node:net';
 function escapeHtml(value) {
     return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
 }
@@ -24,6 +26,17 @@ function getMailConfigs() {
             port: candidate.port,
             secure: candidate.secure,
             requireTLS: !candidate.secure,
+            // Resolve an IPv4 address explicitly. Railway may otherwise pick the
+            // IPv6 address for smtp.hostinger.com, which is unreachable there.
+            getSocket: (_options, callback) => {
+                dns.resolve4(host, (error, addresses) => {
+                    if (error || !addresses?.length) {
+                        callback(error || new Error(`No IPv4 address found for ${host}`), false);
+                        return;
+                    }
+                    callback(null, { connection: net.connect({ host: addresses[0], port: candidate.port }) });
+                });
+            },
             auth: { user, pass },
             connectionTimeout: 15_000,
             greetingTimeout: 15_000,
