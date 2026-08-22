@@ -298,6 +298,26 @@ router.put('/vendor/orders/:id/status', authenticateToken, requirePartner, requi
   res.json(order);
 });
 
+router.put('/vendor/orders/:id/tracking', authenticateToken, requirePartner, requireVendor, async (req, res) => {
+  const vendor = await currentVendor(req as AuthenticatedRequest);
+  if (!vendor) return res.status(404).json({ error: 'Vendor profile not found' });
+  const order = await Order.findByPk(Number(req.params.id));
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  const vendorProducts = await Product.findAll({ where: { vendorId: vendor.id }, attributes: ['id'] });
+  const productIds = new Set(vendorProducts.map((product) => product.id));
+  let belongsToVendor = false;
+  try {
+    const items = JSON.parse(order.items) as Array<{ productId?: number }>;
+    belongsToVendor = items.some((item) => productIds.has(Number(item.productId)));
+  } catch { belongsToVendor = false; }
+  if (!belongsToVendor) return res.status(403).json({ error: 'This order is not assigned to your store' });
+  const trackingCode = typeof req.body.trackingCode === 'string' ? req.body.trackingCode.trim() : '';
+  const trackingUrl = typeof req.body.trackingUrl === 'string' ? req.body.trackingUrl.trim() : '';
+  if (trackingUrl && !/^https?:\/\//i.test(trackingUrl)) return res.status(400).json({ error: 'Tracking URL must start with http:// or https://' });
+  await order.update({ trackingCode: trackingCode || null, trackingUrl: trackingUrl || null });
+  res.json(order);
+});
+
 router.get('/vendor/settlements', authenticateToken, requirePartner, requireVendor, async (req, res) => {
   const vendor = await currentVendor(req as AuthenticatedRequest);
   if (!vendor) return res.status(404).json({ error: 'Vendor profile not found' });

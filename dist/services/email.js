@@ -4,6 +4,9 @@ import net from 'node:net';
 function escapeHtml(value) {
     return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
 }
+function getNotificationEmail() {
+    return process.env.ORDER_NOTIFICATION_EMAIL || process.env.SMTP_USER || process.env.EMAIL_FROM?.match(/<([^>]+)>/)?.[1] || process.env.EMAIL_FROM;
+}
 function getMailConfigs() {
     const host = process.env.SMTP_HOST;
     const user = process.env.SMTP_USER;
@@ -105,8 +108,8 @@ export async function sendPasswordResetOtp(email, code) {
     return sendMail(email, 'Reset your Fuddins password', `<h2>Reset your Fuddins password</h2><p>Use <strong style="font-size:24px;letter-spacing:4px">${escapeHtml(code)}</strong> to choose a new password.</p><p>This code expires in 10 minutes. If you did not request this, you can ignore this email.</p>`);
 }
 export async function sendOrderCreatedEmails(order, paymentUrl) {
-    const config = getMailConfig();
-    if (!config)
+    const notificationEmail = getNotificationEmail();
+    if (!notificationEmail)
         return;
     const paymentSection = paymentUrl
         ? `<p>To complete your payment securely, open this link: <a href="${escapeHtml(paymentUrl)}">Pay securely with Razorpay</a></p>`
@@ -114,22 +117,22 @@ export async function sendOrderCreatedEmails(order, paymentUrl) {
     const summary = orderSummary(order);
     await Promise.all([
         sendMail(order.email, `Fuddins order #${order.id} received`, `<h2>Thank you, ${escapeHtml(order.customerName)}!</h2>${summary}${paymentSection}`),
-        sendMail(config.notificationEmail, `New Fuddins order #${order.id}`, `<h2>New order received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment: ${escapeHtml(order.paymentMethod)} / ${escapeHtml(order.paymentStatus)}</p>`),
+        sendMail(notificationEmail, `New Fuddins order #${order.id}`, `<h2>New order received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment: ${escapeHtml(order.paymentMethod)} / ${escapeHtml(order.paymentStatus)}</p>`),
     ]);
 }
 export async function sendPaymentReceipt(order) {
-    const config = getMailConfig();
-    if (!config)
+    const notificationEmail = getNotificationEmail();
+    if (!notificationEmail)
         return;
     const summary = orderSummary(order);
     await Promise.all([
         sendMail(order.email, `Payment received for Fuddins order #${order.id}`, `<h2>Payment successful</h2><p>Thank you, ${escapeHtml(order.customerName)}. Your payment has been received.</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
-        sendMail(config.notificationEmail, `Payment received: Fuddins order #${order.id}`, `<h2>Payment received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
+        sendMail(notificationEmail, `Payment received: Fuddins order #${order.id}`, `<h2>Payment received</h2><p>Customer: ${escapeHtml(order.customerName)} (${escapeHtml(order.email)})</p>${summary}<p>Payment ID: ${escapeHtml(order.paymentId || 'Confirmed')}</p>`),
     ]);
 }
 export async function sendContactNotification(payload) {
-    const config = getMailConfig();
-    if (!config)
+    const notificationEmail = getNotificationEmail();
+    if (!notificationEmail)
         return;
-    await sendMail(config.notificationEmail, `Fuddins enquiry: ${payload.subject || 'Website enquiry'}`, `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(payload.name)}</p><p><strong>Email:</strong> ${escapeHtml(payload.email)}</p><p><strong>Phone:</strong> ${escapeHtml(payload.phone || '')}</p><p><strong>Subject:</strong> ${escapeHtml(payload.subject || 'Website enquiry')}</p><p>${escapeHtml(payload.message)}</p>`);
+    await sendMail(notificationEmail, `Fuddins enquiry: ${payload.subject || 'Website enquiry'}`, `<h2>New website enquiry</h2><p><strong>Name:</strong> ${escapeHtml(payload.name)}</p><p><strong>Email:</strong> ${escapeHtml(payload.email)}</p><p><strong>Phone:</strong> ${escapeHtml(payload.phone || '')}</p><p><strong>Subject:</strong> ${escapeHtml(payload.subject || 'Website enquiry')}</p><p>${escapeHtml(payload.message)}</p>`);
 }

@@ -44,5 +44,7 @@ export async function ensureCurrentSchema() {
     { name: 'deliveryStatus', sql: "VARCHAR(255) NOT NULL DEFAULT 'unassigned'" },
     { name: 'deliveredAt', sql: 'DATETIME NULL' },
     { name: 'deliveryNote', sql: 'TEXT NULL' },
+    { name: 'trackingCode', sql: 'VARCHAR(255) NULL' },
+    { name: 'trackingUrl', sql: 'TEXT NULL' },
   ]);
 }

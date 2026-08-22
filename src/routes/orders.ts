@@ -7,6 +7,7 @@ import { Op } from 'sequelize';
 import { sendOrderCreatedEmails } from '../services/email.js';
 import { ensureInvoice } from '../services/invoice.js';
 import { awardOrderRewards, redeemOrderBalances, refundOrderBalances, validateOrderRedemption } from '../services/loyalty.js';
+import { buildOrderTracking } from '../services/orderTracking.js';
 
 const router = Router();
 
@@ -44,6 +45,12 @@ router.get('/', authenticateToken, requireAdmin, async (_req, res) => {
   res.json(orders);
 });
 
+router.get('/:id/tracking', authenticateToken, requireAdmin, async (req, res) => {
+  const order = await Order.findByPk(Number(req.params.id));
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  res.json({ ...buildOrderTracking(order), customerName: order.customerName, email: order.email, phone: order.phone, shippingAddress: order.shippingAddress, deliveryNote: order.deliveryNote });
+});
+
 router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const status = String(req.body.status || '').trim();
@@ -59,6 +66,20 @@ router.put('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
     res.json(order);
   } catch {
     res.status(400).json({ error: 'Unable to update order status' });
+  }
+});
+
+router.put('/:id/tracking', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findByPk(Number(req.params.id));
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const trackingCode = typeof req.body.trackingCode === 'string' ? req.body.trackingCode.trim() : '';
+    const trackingUrl = typeof req.body.trackingUrl === 'string' ? req.body.trackingUrl.trim() : '';
+    if (trackingUrl && !/^https?:\/\//i.test(trackingUrl)) return res.status(400).json({ error: 'Tracking URL must start with http:// or https://' });
+    await order.update({ trackingCode: trackingCode || null, trackingUrl: trackingUrl || null });
+    res.json(order);
+  } catch {
+    res.status(400).json({ error: 'Unable to update tracking details' });
   }
 });
 

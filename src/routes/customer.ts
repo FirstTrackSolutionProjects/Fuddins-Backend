@@ -8,6 +8,7 @@ import Product from '../models/Product.js';
 import User from '../models/User.js';
 import { rewardBalance, walletBalance } from '../services/loyalty.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
+import { buildOrderTracking } from '../services/orderTracking.js';
 
 const router = Router();
 router.use(authenticateToken);
@@ -26,6 +27,15 @@ router.get('/orders', async (req, res) => {
     try { items = JSON.parse(order.items); } catch { /* keep an empty list for legacy malformed rows */ }
     return { ...order.toJSON(), items };
   }));
+});
+
+router.get('/orders/:id/tracking', async (req, res) => {
+  const user = (req as AuthenticatedRequest).user;
+  if (!user) return res.status(401).json({ error: 'Access token missing' });
+  const customer = await User.findByPk(user.id, { attributes: ['email'] });
+  const order = await Order.findOne({ where: { id: Number(req.params.id), email: customer?.email || user.email } });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  res.json({ ...buildOrderTracking(order), shippingAddress: order.shippingAddress, deliveryNote: order.deliveryNote });
 });
 
 router.get('/wallet', async (req, res) => {

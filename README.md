@@ -66,7 +66,7 @@ For reliable paid-order confirmation, configure the Razorpay `payment_link.paid`
 
 ## Hostinger order emails
 
-Customer order confirmations, Razorpay payment-link emails, payment receipts, and admin order alerts use SMTP. Add the following settings to `backend/.env` after rotating the mailbox password:
+Customer order confirmations, Razorpay payment-link emails, payment receipts, and admin order alerts use Hostinger SMTP. Add the following settings to `backend/.env` after rotating the mailbox password:
 
 ```bash
 SMTP_HOST=smtp.hostinger.com

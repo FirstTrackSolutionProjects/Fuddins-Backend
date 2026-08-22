@@ -26,6 +26,8 @@ class Order extends Model {
   declare deliveryStatus: string;
   declare deliveredAt: Date | null;
   declare deliveryNote: string | null;
+  declare trackingCode: string | null;
+  declare trackingUrl: string | null;
   declare createdAt: Date;
   declare updatedAt: Date;
 }
@@ -122,6 +124,8 @@ Order.init(
     deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'unassigned' },
     deliveredAt: { type: DataTypes.DATE, allowNull: true },
     deliveryNote: { type: DataTypes.TEXT, allowNull: true },
+    trackingCode: { type: DataTypes.STRING, allowNull: true },
+    trackingUrl: { type: DataTypes.TEXT, allowNull: true },
   },
   {
     sequelize,
