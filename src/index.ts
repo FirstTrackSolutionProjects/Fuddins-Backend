@@ -3,8 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import sequelize from './config/database.js';
-import { ensureDatabase } from './config/ensureDatabase.js';
+import {sequelize} from './models/index.js';
 import apiRoutes from './routes/api.js';
 import authRoutes from './routes/auth.js';
 import categoriesRoutes from './routes/categories.js';
@@ -16,7 +15,6 @@ import pagesRoutes from './routes/pages.js';
 import partnerRoutes from './routes/partner.js';
 import uploadsRoutes from './routes/uploads.js';
 import paymentsRoutes from './routes/payments.js';
-import { ensureCurrentSchema } from './config/schemaMigrations.js';
 import { verifyMailTransport } from './services/email.js';
 
 dotenv.config();
@@ -54,11 +52,8 @@ app.use('/legacy-uploads', express.static(legacyUploadsPath));
 
 async function start() {
   try {
-    await ensureDatabase();
     await sequelize.authenticate();
-    await sequelize.sync({ alter: syncAlter });
-    await ensureCurrentSchema();
-    console.log('Database connected and synced');
+    console.log('Database connected');
   } catch (error) {
     console.error('Database connection failed:', error);
   }

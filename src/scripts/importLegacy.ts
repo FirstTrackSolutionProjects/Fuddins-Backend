@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import mysql, { type Connection } from 'mysql2/promise';
-import sequelize from '../config/database.js';
-import { ensureDatabase } from '../config/ensureDatabase.js';
+import {sequelize} from '../models/index.js';
 import Category from '../models/Category.js';
 import Coupon from '../models/Coupon.js';
 import Order from '../models/Order.js';
@@ -144,12 +143,12 @@ type LegacyPage = {
 function cleanText(value?: string | null) {
   return decodeHtml(
     (value || '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\[[^\]]+\]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\[[^\]]+\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
   );
 }
 
@@ -433,7 +432,6 @@ async function importLegacy() {
   console.log('Legacy database connected.');
 
   console.log('Connecting to modern database...');
-  await ensureDatabase();
   await sequelize.authenticate();
   await sequelize.sync({ alter: process.env.DB_SYNC_ALTER === 'true' });
   console.log('Modern database ready.');

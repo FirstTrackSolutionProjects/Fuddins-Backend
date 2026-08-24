@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
-import sequelize from '../config/database.js';
-import { ensureDatabase } from '../config/ensureDatabase.js';
+import {sequelize} from '../models/index.js';
 import User from '../models/User.js';
 import { hashPassword } from '../utils/password.js';
 
@@ -15,7 +14,6 @@ async function seedAdmin() {
     throw new Error('ADMIN_PASSWORD is required to seed an admin user');
   }
 
-  await ensureDatabase();
   await sequelize.authenticate();
   await sequelize.sync({ alter: true });
 

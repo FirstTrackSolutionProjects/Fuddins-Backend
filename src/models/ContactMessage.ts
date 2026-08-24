@@ -1,5 +1,5 @@
 import { DataTypes, Model } from 'sequelize';
-import sequelize from '../config/database.js';
+import {sequelize} from '../models/index.js';
 
 class ContactMessage extends Model {
   declare id: number;
@@ -21,7 +21,7 @@ ContactMessage.init(
     message: { type: DataTypes.TEXT, allowNull: false },
     status: { type: DataTypes.STRING, allowNull: false, defaultValue: 'new' },
   },
-  { sequelize, tableName: 'contact_messages', timestamps: true }
+  { sequelize: sequelize, tableName: 'contact_messages', timestamps: true }
 );
 
 export default ContactMessage;
