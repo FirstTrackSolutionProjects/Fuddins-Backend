@@ -33,6 +33,9 @@ export async function ensureCurrentSchema() {
   ]);
 
   await addMissingColumns('users', [
+    { name: 'profileImageUrl', sql: 'TEXT NULL' },
+    { name: 'referralCode', sql: 'VARCHAR(32) NULL UNIQUE' },
+    { name: 'referredByUserId', sql: 'INT NULL' },
     { name: 'deliveryVehicleType', sql: 'VARCHAR(255) NULL' },
     { name: 'deliveryVehicleNumber', sql: 'VARCHAR(255) NULL' },
     { name: 'deliveryStatus', sql: "VARCHAR(255) NOT NULL DEFAULT 'offline'" },

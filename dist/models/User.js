@@ -35,6 +35,19 @@ User.init({
         type: DataTypes.STRING,
         allowNull: true,
     },
+    profileImageUrl: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+    },
+    referralCode: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        unique: true,
+    },
+    referredByUserId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     billingAddress: {
         type: DataTypes.TEXT,
         allowNull: true,

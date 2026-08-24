@@ -9,6 +9,9 @@ class User extends Model {
   declare password: string;
   declare role: string;
   declare phone: string | null;
+  declare profileImageUrl: string | null;
+  declare referralCode: string | null;
+  declare referredByUserId: number | null;
   declare billingAddress: string | null;
   declare shippingAddress: string | null;
   declare deliveryVehicleType: string | null;
@@ -49,6 +52,19 @@ User.init(
     },
     phone: {
       type: DataTypes.STRING,
+      allowNull: true,
+    },
+    profileImageUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    referralCode: {
+      type: DataTypes.STRING(32),
+      allowNull: true,
+      unique: true,
+    },
+    referredByUserId: {
+      type: DataTypes.INTEGER,
       allowNull: true,
     },
     billingAddress: {

@@ -15,8 +15,7 @@ import customerRoutes from './routes/customer.js';
 import pagesRoutes from './routes/pages.js';
 import partnerRoutes from './routes/partner.js';
 import uploadsRoutes from './routes/uploads.js';
-import { createRazorpayPaymentLink, getPaymentStatus, razorpayWebhook } from './routes/payments.js';
-import { optionalAuthenticateToken } from './middleware/auth.js';
+import paymentsRoutes from './routes/payments.js';
 import { ensureCurrentSchema } from './config/schemaMigrations.js';
 import { verifyMailTransport } from './services/email.js';
 dotenv.config();
@@ -28,7 +27,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const legacyUploadsPath = path.resolve(__dirname, '../../../domains/fuddins.com/public_html/wp-content/uploads');
 app.use(cors());
-app.post('/payments/razorpay/webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 app.use(express.json());
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok', message: 'Backend is running' });
@@ -44,9 +42,8 @@ app.use('/customer', customerRoutes);
 app.use('/api/customer', customerRoutes);
 app.use('/pages', pagesRoutes);
 app.use('/partner', partnerRoutes);
+app.use('/payments', paymentsRoutes);
 app.use('/uploads', uploadsRoutes);
-app.post('/payments/razorpay/payment-link', optionalAuthenticateToken, createRazorpayPaymentLink);
-app.get('/payments/orders/:id/status', getPaymentStatus);
 app.use('/uploads', express.static('uploads'));
 app.use('/legacy-uploads', express.static(legacyUploadsPath));
 async function start() {
