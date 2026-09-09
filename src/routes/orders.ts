@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { authenticateToken, optionalAuthenticateToken, AuthenticatedRequest, requireAdmin } from '../middleware/auth.js';
+import { get, get__id_tracking_1, put__id_status_2, put__id_tracking_3, post_4 } from '../controllers/ordersController.js';
+
+const router = Router();
+
+router.get('/', authenticateToken, requireAdmin, get);
+router.get('/:id/tracking', authenticateToken, requireAdmin, get__id_tracking_1);
+router.put('/:id/status', authenticateToken, requireAdmin, put__id_status_2);
+router.put('/:id/tracking', authenticateToken, requireAdmin, put__id_tracking_3);
+router.post('/', optionalAuthenticateToken, post_4);
+
+export default router;
