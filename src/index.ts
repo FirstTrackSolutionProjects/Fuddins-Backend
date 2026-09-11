@@ -16,6 +16,8 @@ import partnerRoutes from './routes/partner.js';
 import uploadsRoutes from './routes/uploads.js';
 import paymentsRoutes from './routes/payments.js';
 import marketplaceRoutes from './routes/marketplace.js';
+import adminDeliveryUsersRoutes from './routes/adminDeliveryUsers.js';
+import deliveryRoutes from './routes/delivery.js';
 import { verifyMailTransport } from './services/email.js';
 
 dotenv.config();
@@ -48,6 +50,8 @@ app.use('/pages', pagesRoutes);
 app.use('/partner', partnerRoutes);
 app.use('/payments', paymentsRoutes);
 app.use('/marketplace', marketplaceRoutes);
+app.use('/admin', adminDeliveryUsersRoutes);
+app.use('/delivery', deliveryRoutes);
 app.use('/uploads', uploadsRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/legacy-uploads', express.static(legacyUploadsPath));

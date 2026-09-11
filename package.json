@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "seed:admin": "node --loader ts-node/esm src/scripts/seedAdmin.ts",
-    "import:legacy": "node --loader ts-node/esm src/scripts/importLegacy.ts"
+    "import:legacy": "node --loader ts-node/esm src/scripts/importLegacy.ts",
+    "link:legacy-vendors": "node --loader ts-node/esm src/scripts/linkLegacyProductVendors.ts"
   },
   "dependencies": {
     "cors": "^2.8.0",

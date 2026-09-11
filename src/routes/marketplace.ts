@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdmin, requirePartner } from '../middleware/auth.js';
-import { adminDashboard, pendingProducts, approveProduct, rejectProduct, submitProduct, syncOrder, vendorOrders, changeVendorOrderStatus, inventory, adjustInventory, myNotifications, markNotification } from '../controllers/marketplaceController.js';
+import { adminDashboard, pendingProducts, approveProduct, rejectProduct, submitProduct, syncOrder, vendorOrders, changeVendorOrderStatus, assignVendorOrderDelivery, adminVendorOrders, inventory, adjustInventory, myNotifications, markNotification } from '../controllers/marketplaceController.js';
 const router=Router();
 
 router.get('/admin/dashboard',authenticateToken,requireAdmin,adminDashboard);
 router.get('/admin/products/pending',authenticateToken,requireAdmin,pendingProducts);
 router.post('/admin/products/:id/approve',authenticateToken,requireAdmin,approveProduct);
 router.post('/admin/products/:id/reject',authenticateToken,requireAdmin,rejectProduct);
+router.post('/admin/vendor-orders/:id/assign-delivery',authenticateToken,requireAdmin,assignVendorOrderDelivery);
+router.get('/admin/vendor-orders',authenticateToken,requireAdmin,adminVendorOrders);
 
 router.post('/orders/:orderId/sync-vendor-orders',authenticateToken,requireAdmin,syncOrder);
 router.get('/vendor/orders',authenticateToken,requirePartner,vendorOrders);
