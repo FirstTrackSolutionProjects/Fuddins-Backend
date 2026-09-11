@@ -96,14 +96,25 @@ export async function syncOrder(req: Request,res: Response) {
   catch(e){res.status(400).json({error:e instanceof Error?e.message:'Unable to sync order'});}
 }
 
+export async function attachOrderItems(vendorOrders: VendorOrder[]) {
+  if (!vendorOrders.length) return vendorOrders.map((vo) => ({ ...vo.get({ plain: true }), items: [] }));
+  const orderIds = [...new Set(vendorOrders.map((vo) => vo.orderId))];
+  const vendorIds = [...new Set(vendorOrders.map((vo) => vo.vendorId))];
+  const allItems = await OrderItem.findAll({ where: { orderId: { [Op.in]: orderIds }, vendorId: { [Op.in]: vendorIds } } });
+  return vendorOrders.map((vo) => ({
+    ...vo.get({ plain: true }),
+    items: allItems.filter((item) => item.orderId === vo.orderId && item.vendorId === vo.vendorId).map((item) => item.get({ plain: true })),
+  }));
+}
+
 export async function vendorOrders(req: Request,res: Response) {
   const user=actor(req); const vendor=await Vendor.findOne({where:{userId:user?.id}});
   if(!vendor) return res.status(404).json({error:'Vendor profile not found'});
   const rows=await VendorOrder.findAll({where:{vendorId:vendor.id},include:[{model:Order,as:'order'},{model:Vendor,as:'vendor',attributes:['id','storeName']}],order:[['createdAt','DESC']]});
-  res.json(rows);
+  res.json(await attachOrderItems(rows));
 }
 
-const transitions:Record<string,string[]>={pending:['accepted','rejected','cancelled'],accepted:['preparing','cancelled'],preparing:['ready','cancelled'],ready:['assigned'],assigned:['picked_up'],picked_up:['delivered']};
+const transitions:Record<string,string[]>={pending:['accepted','rejected','cancelled'],accepted:['preparing','cancelled'],preparing:['ready','cancelled'],ready:['cancelled'],assigned:[],picked_up:[],delivered:[]};
 export async function changeVendorOrderStatus(req: Request,res: Response) {
   const user=actor(req); const vendor=await Vendor.findOne({where:{userId:user?.id}});
   if(!vendor) return res.status(404).json({error:'Vendor profile not found'});
@@ -111,11 +122,47 @@ export async function changeVendorOrderStatus(req: Request,res: Response) {
   if(!vo) return res.status(404).json({error:'Vendor order not found'});
   const status=String(req.body.status||''); if(!(transitions[vo.status]||[]).includes(status)) return res.status(400).json({error:`Cannot change ${vo.status} to ${status}`});
   const now=new Date(); const patch:any={status};
-  if(status==='accepted') patch.acceptedAt=now; if(status==='preparing') patch.preparingAt=now; if(status==='ready') patch.readyAt=now; if(status==='picked_up') patch.pickedUpAt=now; if(status==='delivered') patch.deliveredAt=now;
+  if(status==='accepted') patch.acceptedAt=now; if(status==='preparing') patch.preparingAt=now; if(status==='ready') patch.readyAt=now;
   if(status==='rejected') patch.rejectionReason=String(req.body.reason||'Rejected by vendor');
   if(status==='cancelled') patch.cancellationReason=String(req.body.reason||'Cancelled by vendor');
   await vo.update(patch);
   res.json({success:true,data:vo});
+}
+
+export async function adminVendorOrders(_req: Request, res: Response) {
+  const vendorOrders = await VendorOrder.findAll({
+    where: { status: { [Op.in]: ['ready', 'assigned', 'picked_up', 'delivered'] } },
+    include: [
+      { model: Order, as: 'order' },
+      { model: Vendor, as: 'vendor', attributes: ['id', 'storeName', 'phone'] },
+    ],
+    order: [['updatedAt', 'DESC']],
+    limit: 100,
+  });
+  const deliveryUsers = await User.findAll({ where: { role: 'delivery', active: true }, attributes: ['id', 'name', 'phone', 'deliveryStatus'] });
+  res.json({ vendorOrders: await attachOrderItems(vendorOrders), deliveryUsers });
+}
+
+export async function assignVendorOrderDelivery(req: Request, res: Response) {
+  const vo = await VendorOrder.findByPk(Number(req.params.id), { include: [{ model: Vendor, as: 'vendor', attributes: ['id', 'storeName', 'userId'] }] });
+  if (!vo) return res.status(404).json({ error: 'Vendor order not found' });
+  if (vo.status !== 'ready') return res.status(400).json({ error: `Order must be ready before assigning delivery (current status: ${vo.status})` });
+
+  const deliveryUserId = Number(req.body.deliveryUserId);
+  if (!Number.isInteger(deliveryUserId)) return res.status(400).json({ error: 'deliveryUserId is required' });
+  const deliveryUser = await User.findOne({ where: { id: deliveryUserId, role: 'delivery' } });
+  if (!deliveryUser) return res.status(404).json({ error: 'Delivery user not found' });
+  if (deliveryUser.active === false) return res.status(400).json({ error: 'This delivery user is deactivated' });
+
+  await vo.update({ deliveryUserId, status: 'assigned' });
+  await Notification.create({
+    userId: deliveryUser.id,
+    type: 'delivery_assigned',
+    title: 'New delivery assigned',
+    message: `You have been assigned an order from ${(vo as any).vendor?.storeName || 'a vendor'}.`,
+    data: JSON.stringify({ vendorOrderId: vo.id }),
+  });
+  res.json({ success: true, data: vo });
 }
 
 export async function inventory(req: Request,res: Response) {

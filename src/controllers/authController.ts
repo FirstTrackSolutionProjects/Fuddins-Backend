@@ -209,6 +209,9 @@ export async function post__partner_login_4(req: Request, res: Response) {
     if (!isPartnerRole(user.role)) {
       return res.status(403).json({ error: 'This account is not authorised for Foodiens Partner' });
     }
+    if (user.active === false) {
+      return res.status(403).json({ error: 'This account has been deactivated. Contact an administrator.' });
+    }
     res.json(issueSession(user));
   } catch (error) {
     console.error('Partner login failed:', error);

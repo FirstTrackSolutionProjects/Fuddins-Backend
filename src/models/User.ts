@@ -18,6 +18,7 @@ class User extends Model {
   declare deliveryVehicleNumber: string | null;
   declare deliveryStatus: string;
   declare deliveryLastSeenAt: Date | null;
+  declare active: boolean;
 }
 
 User.init(
@@ -79,6 +80,7 @@ User.init(
     deliveryVehicleNumber: { type: DataTypes.STRING, allowNull: true },
     deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'offline' },
     deliveryLastSeenAt: { type: DataTypes.DATE, allowNull: true },
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   },
   {
     sequelize: sequelize,
