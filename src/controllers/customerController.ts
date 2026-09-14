@@ -100,7 +100,7 @@ export async function get__downloads_7(req: Request, res: Response) {
 export async function get__profile_8(req: Request, res: Response) {
   const authUser = (req as AuthenticatedRequest).user;
   if (!authUser) return res.status(401).json({ error: 'Access token missing' });
-  const user = await User.findByPk(authUser.id, { attributes: ['id', 'name', 'email', 'phone', 'profileImageUrl', 'referralCode', 'billingAddress', 'shippingAddress'] });
+  const user = await User.findByPk(authUser.id, { attributes: ['id', 'name', 'email', 'phone', 'profileImageUrl', 'notificationPreferences', 'referralCode', 'billingAddress', 'shippingAddress'] });
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 
@@ -132,8 +132,9 @@ export async function patch__profile_9(req: Request, res: Response) {
     const existing = await User.findOne({ where: { email } });
     if (existing && existing.id !== user.id) return res.status(409).json({ error: 'Email address is already in use' });
   }
-  await user.update({ name, email, phone: typeof req.body.phone === 'string' ? req.body.phone.trim() : user.phone, billingAddress: typeof req.body.billingAddress === 'string' ? req.body.billingAddress.trim() : user.billingAddress, shippingAddress: typeof req.body.shippingAddress === 'string' ? req.body.shippingAddress.trim() : user.shippingAddress });
-  res.json({ id: user.id, name: user.name, email: user.email, phone: user.phone, billingAddress: user.billingAddress, shippingAddress: user.shippingAddress });
+  const notificationPreferences = typeof req.body.notificationPreferences === 'string' ? req.body.notificationPreferences : user.notificationPreferences;
+  await user.update({ name, email, phone: typeof req.body.phone === 'string' ? req.body.phone.trim() : user.phone, billingAddress: typeof req.body.billingAddress === 'string' ? req.body.billingAddress.trim() : user.billingAddress, shippingAddress: typeof req.body.shippingAddress === 'string' ? req.body.shippingAddress.trim() : user.shippingAddress, notificationPreferences });
+  res.json({ id: user.id, name: user.name, email: user.email, phone: user.phone, profileImageUrl: user.profileImageUrl, notificationPreferences: user.notificationPreferences, billingAddress: user.billingAddress, shippingAddress: user.shippingAddress });
 
 }
 

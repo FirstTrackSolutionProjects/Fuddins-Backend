@@ -4,6 +4,10 @@ import User from './User.js';
 import AuthOtp from './AuthOtp.js';
 import Category from './Category.js';
 import ContactMessage from './ContactMessage.js';
+import CareerApplication from './CareerApplication.js';
+import ShoppingCardApplication from './ShoppingCardApplication.js';
+import MenuUploadSubmission from './MenuUploadSubmission.js';
+import OnboardingEnquiry from './OnboardingEnquiry.js';
 import Coupon from './Coupon.js';
 import Invoice from './Invoice.js';
 import Order from './Order.js';
@@ -27,6 +31,10 @@ const db = {
   AuthOtp,
   Category,
   ContactMessage,
+  CareerApplication,
+  ShoppingCardApplication,
+  MenuUploadSubmission,
+  OnboardingEnquiry,
   Coupon,
   Invoice,
   Order,

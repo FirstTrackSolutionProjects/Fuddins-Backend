@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireAdmin } from '../middleware/auth.js';
+import { authenticateToken, optionalAuthenticateToken, requireAdmin } from '../middleware/auth.js';
 import {
   listUsers,
   createUser,
@@ -19,7 +19,7 @@ const router = Router();
 router.get('/users', authenticateToken, requireAdmin, listUsers);
 router.post('/users', authenticateToken, requireAdmin, createUser);
 
-router.get('/products', listProducts);
+router.get('/products', optionalAuthenticateToken, listProducts);
 router.post('/products', authenticateToken, requireAdmin, createProduct);
 router.put('/products/:id', authenticateToken, requireAdmin, updateProduct);
 router.delete('/products/:id', authenticateToken, requireAdmin, deleteProduct);

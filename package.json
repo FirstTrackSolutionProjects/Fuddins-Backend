@@ -9,7 +9,12 @@
     "build": "tsc -p tsconfig.json",
     "seed:admin": "node --loader ts-node/esm src/scripts/seedAdmin.ts",
     "import:legacy": "node --loader ts-node/esm src/scripts/importLegacy.ts",
-    "link:legacy-vendors": "node --loader ts-node/esm src/scripts/linkLegacyProductVendors.ts"
+    "link:legacy-vendors": "node --loader ts-node/esm src/scripts/linkLegacyProductVendors.ts",
+    "migrate:career": "node --loader ts-node/esm src/scripts/migrateCareerApplications.ts",
+    "migrate:shopping-card": "node --loader ts-node/esm src/scripts/migrateShoppingCardApplications.ts",
+    "migrate:menu-uploads": "node --loader ts-node/esm src/scripts/migrateMenuUploadSubmissions.ts",
+    "migrate:onboarding-enquiries": "node --loader ts-node/esm src/scripts/migrateOnboardingEnquiries.ts",
+    "migrate:user-notifications": "node --loader ts-node/esm src/scripts/migrateUserNotificationPreferences.ts"
   },
   "dependencies": {
     "cors": "^2.8.0",

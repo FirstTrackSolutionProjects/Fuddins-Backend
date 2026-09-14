@@ -1,4 +1,8 @@
 import type { Request, Response } from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { authenticateToken, type AuthenticatedRequest, requireAdmin } from '../middleware/auth.js';
 import Invoice from '../models/Invoice.js';
 import Order from '../models/Order.js';
@@ -11,6 +15,21 @@ import WalletTransaction from '../models/WalletTransaction.js';
 import { generateInvoicePdf } from '../services/invoice.js';
 import { addRewardTransaction, addWalletTransaction, rewardBalance, walletBalance } from '../services/loyalty.js';
 import { hashPassword } from '../utils/password.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const vendorDocumentDir = path.join(__dirname, '../../uploads/vendor-documents');
+fs.mkdirSync(vendorDocumentDir, { recursive: true });
+const acceptedVendorDocumentTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+
+export const vendorRegistrationUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, vendorDocumentDir),
+    filename: (_req, file, callback) => callback(null, `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '-')}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => acceptedVendorDocumentTypes.has(file.mimetype) ? callback(null, true) : callback(new Error('Documents must be PDF, JPG, PNG, DOC, or DOCX')),
+});
 
 function requestedUserId(req: AuthenticatedRequest) {
   const user = req.user;
@@ -113,7 +132,25 @@ export async function post__vendors_register_7(req: Request, res: Response) {
     const password = String(req.body.password || '');
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : null;
     const address = typeof req.body.address === 'string' ? req.body.address.trim() : null;
-    const profile = typeof req.body.profile === 'string' ? req.body.profile.trim() : null;
+    const plan = String(req.body.plan || 'Free Plan').trim();
+    const fees: Record<string, number> = { 'Free Plan': 0, 'Silver Insta': 799, 'Gold Insta': 999, 'Diamond Insta': 1499, 'Platinum Insta': 1999, 'Bronze Insta': 499 };
+    if (!Object.prototype.hasOwnProperty.call(fees, plan)) return res.status(400).json({ error: 'Choose a valid membership plan' });
+    const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+    const documentUrl = (field: string) => files[field]?.[0] ? `/uploads/vendor-documents/${files[field][0].filename}` : null;
+    const profile = JSON.stringify({
+      plan,
+      firstName: String(req.body.firstName || '').trim() || null,
+      lastName: String(req.body.lastName || '').trim() || null,
+      country: String(req.body.country || '').trim() || null,
+      city: String(req.body.city || '').trim() || null,
+      state: String(req.body.state || '').trim() || null,
+      postcode: String(req.body.postcode || '').trim() || null,
+      gst: String(req.body.gst || '').trim() || null,
+      fssai: String(req.body.fssai || '').trim() || null,
+      executiveName: String(req.body.executiveName || '').trim() || null,
+      executivePhone: String(req.body.mobile || '').trim() || null,
+      documents: { gstCertificate: documentUrl('gstCertificate'), fssaiCertificate: documentUrl('fssaiCertificate'), bankPassbook: documentUrl('bankPassbook'), otherLicence: documentUrl('otherLicence') },
+    });
     if (!storeName || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ error: 'Store name and valid email are required' });
     }
@@ -126,7 +163,7 @@ export async function post__vendors_register_7(req: Request, res: Response) {
       return res.status(409).json({ error: 'Vendor request already exists for this email' });
     }
 
-    const vendor = await Vendor.create({ storeName, email, phone, address, profile, status: 'pending', passwordHash: hashPassword(password) });
+    const vendor = await Vendor.create({ storeName, email, phone, address, profile, status: 'pending', passwordHash: hashPassword(password), membershipPlan: plan, membershipFee: fees[plan], membershipStatus: 'pending', membershipPaymentStatus: fees[plan] === 0 ? 'paid' : 'unpaid' });
     res.status(201).json({ id: vendor.id, message: 'Vendor registration received. Admin must approve it before this login becomes active.' });
   } catch {
     res.status(400).json({ error: 'Unable to submit vendor registration' });
