@@ -94,7 +94,7 @@ export async function post_4(req: Request, res: Response) {
     if (!customerName || !email || !/^\S+@\S+\.\S+$/.test(email) || !Array.isArray(req.body.items) || req.body.items.length === 0) {
       return res.status(400).json({ error: 'Customer name, email, and cart items are required' });
     }
-    if (paymentMethod !== 'cod') return res.status(400).json({ error: 'Use the online payment flow for online orders' });
+    if (!['cod', 'wallet'].includes(paymentMethod)) return res.status(400).json({ error: 'Use the online payment flow for online orders' });
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
     const shippingAddress = typeof req.body.shippingAddress === 'string' ? req.body.shippingAddress.trim() : '';
     if (phone.replace(/\D/g, '').length < 8) return res.status(400).json({ error: 'A valid phone number is required for cash on delivery' });
@@ -119,6 +119,7 @@ export async function post_4(req: Request, res: Response) {
       if (!product) throw new Error('One or more products are no longer available');
       const variation = cartItem.variationId ? parseVariations(product).find((item) => item.id === cartItem.variationId) : null;
       if (cartItem.variationId && !variation) throw new Error(`${product.name} option is no longer available`);
+      if (product.approvalStatus !== 'approved') throw new Error(`${product.name} is not available for purchase`);
       const stockStatus = variation?.stockStatus || product.stockStatus;
       const stockQuantity = variation?.stockQuantity ?? product.stockQuantity;
       if (stockStatus === 'outofstock' || (stockQuantity !== null && stockQuantity < cartItem.quantity)) throw new Error(`${product.name} is out of stock`);
@@ -157,6 +158,8 @@ export async function post_4(req: Request, res: Response) {
     }
     const total = Math.max(orderTotalBeforeRedemption - redemption.walletAmount - redemption.rewardPoints, 0);
 
+    if (paymentMethod === 'wallet' && total > 0.001) return res.status(400).json({ error: 'Wallet payment can only be used when wallet covers the full order total' });
+    const isWalletPaid = paymentMethod === 'wallet' && total <= 0.001;
     const order = await Order.create({
       customerName,
       email,
@@ -172,7 +175,7 @@ export async function post_4(req: Request, res: Response) {
       shippingAddress,
       phone,
       paymentMethod,
-      paymentStatus: 'pending',
+      paymentStatus: isWalletPaid ? 'paid' : 'pending',
     });
 
     // Materialize vendor-specific sub-orders for the marketplace backbone.
@@ -202,6 +205,7 @@ export async function post_4(req: Request, res: Response) {
       if (Object.keys(updatePayload).length) await product.update(updatePayload);
     }
     if (coupon) await coupon.increment('usedCount');
+    if (isWalletPaid) void awardOrderRewards(order);
     void ensureInvoice(order);
     void sendOrderCreatedEmails(order);
 

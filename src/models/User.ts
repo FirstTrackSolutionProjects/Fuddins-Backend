@@ -10,6 +10,7 @@ class User extends Model {
   declare role: string;
   declare phone: string | null;
   declare profileImageUrl: string | null;
+  declare notificationPreferences: string | null;
   declare referralCode: string | null;
   declare referredByUserId: number | null;
   declare billingAddress: string | null;
@@ -59,6 +60,7 @@ User.init(
       type: DataTypes.TEXT,
       allowNull: true,
     },
+    notificationPreferences: { type: DataTypes.TEXT, allowNull: true },
     referralCode: {
       type: DataTypes.STRING(32),
       allowNull: true,

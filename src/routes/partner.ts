@@ -2,8 +2,12 @@ import { Router } from 'express';
 import { authenticateToken, requireAdmin, requirePartner, type AuthenticatedRequest } from '../middleware/auth.js';
 import { get__overview, get__vendor_profile_1, put__vendor_profile_2, get__vendor_membership_3, post__vendor_membership_request_4, post__vendor_membership_payment_link_5, get__vendor_payments_6, put__vendor_payment_profile_7, post__vendor_payout_requests_8, get__vendor_payout_requests_9, get__vendor_products_10, post__vendor_products_11, put__vendor_products_id_12, delete__vendor_products_id_13, get__vendor_orders_14, put__vendor_orders_id_status_15, put__vendor_orders_id_tracking_16, get__vendor_settlements_17, get__vendor_reports_18, get__vendor_notices_19, put__vendor_notices_id_read_20, get__notices_21, post__notices_22, get__delivery_orders_23, get__delivery_profile_24, put__delivery_profile_25, get__delivery_summary_26, put__delivery_orders_id_status_27, get__delivery_assignments_28, put__delivery_assignments_orderId_29 } from '../controllers/partnerController.js';
 import { requireVendor, requireDelivery } from '../controllers/partnerController.js';
+import { getAll as getMenuUploads, menuUpload, post as postMenuUpload } from '../controllers/menuUploadController.js';
 
 const router = Router();
+
+router.post('/menu-upload', menuUpload.single('menu'), postMenuUpload);
+router.get('/menu-uploads', authenticateToken, requireAdmin, getMenuUploads);
 
 router.get('/overview', authenticateToken, requirePartner, get__overview);
 router.get('/vendor/profile', authenticateToken, requirePartner, requireVendor, get__vendor_profile_1);

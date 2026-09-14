@@ -4,8 +4,6 @@ import RewardTransaction from '../models/RewardTransaction.js';
 import Order from '../models/Order.js';
 import { Op } from 'sequelize';
 
-export const MAX_REDEMPTION_RATE = 0.2;
-
 export async function walletBalance(userId: number) {
   const transactions = await WalletTransaction.findAll({ where: { userId, status: 'completed' } });
   return transactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
@@ -46,10 +44,15 @@ export async function validateOrderRedemption(userId: number, orderTotal: number
   if (!Number.isFinite(walletAmount) || !Number.isFinite(rewardPoints)) throw new Error('Wallet or reward amount is invalid');
   const wallet = await walletBalance(userId);
   const points = await rewardBalance(userId);
-  const maxRedeemable = Math.max(0, Number(orderTotal) * MAX_REDEMPTION_RATE);
+  // Wallet money is a stored customer balance, so it may cover the entire order.
+  // Keep the established 20% cap for reward points, while never allowing the
+  // combined redemption to exceed what is still payable.
+  const maxRedeemable = Math.max(0, Number(orderTotal));
+  const maxRewardPoints = Math.min(maxRedeemable * 0.2, Math.max(0, maxRedeemable - walletAmount));
   if (walletAmount > wallet + 0.001) throw new Error('Wallet balance is insufficient');
   if (rewardPoints > points) throw new Error('Reward points balance is insufficient');
-  if (walletAmount + rewardPoints > maxRedeemable + 0.001) throw new Error('Wallet and points can cover up to 20% of this order');
+  if (rewardPoints > maxRewardPoints + 0.001) throw new Error('Reward points can cover up to 20% of this order after wallet redemption');
+  if (walletAmount + rewardPoints > maxRedeemable + 0.001) throw new Error('Wallet and reward amount cannot exceed the order total');
   return { walletAmount: Number(walletAmount.toFixed(2)), rewardPoints };
 }
 

@@ -5,6 +5,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import Coupon from '../models/Coupon.js';
 import Vendor from '../models/Vendor.js';
+import ShoppingCardApplication from '../models/ShoppingCardApplication.js';
 import { sendOrderCreatedEmails, sendPaymentReceipt } from '../services/email.js';
 import { ensureInvoice } from '../services/invoice.js';
 import { awardOrderRewards, redeemOrderBalances, refundOrderBalances, validateOrderRedemption } from '../services/loyalty.js';
@@ -95,7 +96,6 @@ async function applyCoupon(code: unknown, subtotal: number) {
 export async function createRazorpayPaymentLink(req: Request, res: Response) {
   try {
     if (!req.body.customerName?.trim() || !req.body.email?.trim()) return res.status(400).json({ error: 'Customer name and email are required' });
-    const { keyId, keySecret } = razorpayConfig();
     const { normalizedItems, products, quantities, subtotal } = await calculateItems(req.body.items);
     const { coupon, discountTotal } = await applyCoupon(req.body.couponCode, subtotal);
     const shippingTotal = Number(req.body.shippingTotal || 0);
@@ -111,6 +111,21 @@ export async function createRazorpayPaymentLink(req: Request, res: Response) {
       redemption = await validateOrderRedemption(authUser.id, orderTotalBeforeRedemption, requestedWallet, requestedPoints);
     }
     const total = Math.max(orderTotalBeforeRedemption - redemption.walletAmount - redemption.rewardPoints, 0);
+    // A fully redeemed order does not need Razorpay credentials or a payment link.
+    if (total <= 0.001) {
+      const order = await Order.create({
+        customerName: req.body.customerName.trim(), email: req.body.email.trim().toLowerCase(), total: 0, subtotal, discountTotal, shippingTotal, taxTotal,
+        items: JSON.stringify(normalizedItems), status: 'pending', couponCode: coupon?.code || null,
+        billingAddress: typeof req.body.billingAddress === 'string' ? req.body.billingAddress : null,
+        shippingAddress: typeof req.body.shippingAddress === 'string' ? req.body.shippingAddress : null,
+        phone: typeof req.body.phone === 'string' ? req.body.phone : null, paymentMethod: 'wallet', paymentStatus: 'paid', paymentProvider: 'wallet',
+      });
+      if (authUser) await redeemOrderBalances(authUser.id, order.id, orderTotalBeforeRedemption, redemption.walletAmount, redemption.rewardPoints);
+      if (coupon) await coupon.increment('usedCount');
+      void ensureInvoice(order); void sendOrderCreatedEmails(order); void awardOrderRewards(order);
+      return res.status(201).json({ orderId: order.id, paymentStatus: 'paid', walletCovered: true });
+    }
+    const { keyId, keySecret } = razorpayConfig();
     const order = await Order.create({
       customerName: req.body.customerName.trim(), email: req.body.email.trim().toLowerCase(), total, subtotal, discountTotal, shippingTotal, taxTotal,
       items: JSON.stringify(normalizedItems), status: 'pending', couponCode: coupon?.code || null,
@@ -194,6 +209,8 @@ export async function razorpayWebhook(req: Request, res: Response) {
       }
       const vendor = await Vendor.findOne({ where: { membershipPaymentLinkId: paymentLink.id } });
       if (vendor) await vendor.update({ membershipPaymentStatus: status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending', membershipStatus: status === 'paid' ? 'active' : vendor.membershipStatus, membershipPaymentId: event.payload?.payment?.entity?.id || vendor.membershipPaymentId, membershipStartedAt: status === 'paid' && !vendor.membershipStartedAt ? new Date() : vendor.membershipStartedAt, membershipExpiresAt: status === 'paid' && !vendor.membershipExpiresAt ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : vendor.membershipExpiresAt });
+      const shoppingCardApplication = await ShoppingCardApplication.findOne({ where: { paymentLinkId: paymentLink.id } });
+      if (shoppingCardApplication) await shoppingCardApplication.update({ paymentStatus: status === 'paid' ? 'paid' : status === 'failed' ? 'failed' : 'pending', status: status === 'paid' ? 'paid' : shoppingCardApplication.status, paymentId: event.payload?.payment?.entity?.id || shoppingCardApplication.paymentId });
     }
     res.status(200).json({ received: true });
   } catch { res.status(400).json({ error: 'Invalid webhook payload' }); }
