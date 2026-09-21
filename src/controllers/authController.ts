@@ -25,7 +25,7 @@ function userPayload(user: User) {
 }
 
 function issueSession(user: User) {
-  return { token: jwt.sign(userPayload(user), getJwtSecret(), { expiresIn: '1h' }), user: userPayload(user) };
+  return { token: jwt.sign(userPayload(user), getJwtSecret(), { expiresIn: '30d' }), user: userPayload(user) };
 }
 
 function normaliseEmail(value: unknown) {
@@ -394,4 +394,106 @@ export async function get__me_12(req: Request, res: Response) {
 
   res.json(user);
 
+}
+
+async function activePartnerForEmail(email: string) {
+  const user = await User.findOne({ where: { email } });
+  if (!user || !isPartnerRole(user.role)) throw authRouteError(403, 'This account is not authorised for Foodiens Partner');
+  if (user.active === false) throw authRouteError(403, 'This account has been deactivated. Contact an administrator.');
+  return user;
+}
+
+async function activePartnerForPhone(phone: string) {
+  const user = await User.findOne({ where: { phone } });
+  if (!user || !isPartnerRole(user.role)) throw authRouteError(403, 'This phone number is not authorised for Foodiens Partner');
+  if (user.active === false) throw authRouteError(403, 'This account has been deactivated. Contact an administrator.');
+  return user;
+}
+
+export async function post__partner_email_otp_request(req: Request, res: Response) {
+  try {
+    const email = normaliseEmail(req.body.email);
+    if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address' });
+    await activePartnerForEmail(email);
+    const latest = await AuthOtp.findOne({ where: { channel: 'partner_email', target: email, createdAt: { [Op.gte]: new Date(Date.now() - 60_000) } }, order: [['createdAt', 'DESC']] });
+    if (latest) return res.status(429).json({ error: 'Please wait one minute before requesting another code' });
+    const code = crypto.randomInt(100000, 1000000).toString();
+    if (!await sendLoginOtp(email, code)) return res.status(503).json({ error: 'Email service is not configured. Please try again later.' });
+    await AuthOtp.create({ channel: 'partner_email', target: email, codeHash: otpHash(email, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
+    const body: { message: string; testCode?: string } = { message: 'Verification code sent. It expires in 10 minutes.' };
+    if (process.env.OTP_DEBUG_RESPONSE === 'true' && process.env.NODE_ENV !== 'production') body.testCode = code;
+    res.json(body);
+  } catch (error) {
+    const routeError = error as Error & { status?: number };
+    res.status(routeError.status || 400).json({ error: routeError.message || 'Unable to send verification code' });
+  }
+}
+
+export async function post__partner_email_otp_verify(req: Request, res: Response) {
+  try {
+    const email = normaliseEmail(req.body.email);
+    const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    if (!/^\S+@\S+\.\S+$/.test(email) || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid email and 6-digit code' });
+    const user = await activePartnerForEmail(email);
+    const otp = await AuthOtp.findOne({ where: { channel: 'partner_email', target: email, usedAt: null }, order: [['createdAt', 'DESC']] });
+    if (!otp || otp.expiresAt.getTime() < Date.now()) return res.status(400).json({ error: 'This code has expired. Request a new one.' });
+    if (otp.attempts >= 5) return res.status(429).json({ error: 'Too many attempts. Request a new code.' });
+    if (otp.codeHash !== otpHash(email, code)) { await otp.increment('attempts'); return res.status(401).json({ error: 'Incorrect verification code' }); }
+    await otp.update({ usedAt: new Date() });
+    res.json(issueSession(user));
+  } catch (error) {
+    const routeError = error as Error & { status?: number };
+    res.status(routeError.status || 400).json({ error: routeError.message || 'Unable to verify code' });
+  }
+}
+
+export async function post__partner_phone_otp_request(req: Request, res: Response) {
+  try {
+    const phone = normalisePhone(req.body.phone);
+    if (!phone) return res.status(400).json({ error: 'Enter a valid phone number with country code' });
+    await activePartnerForPhone(phone);
+    const latest = await AuthOtp.findOne({ where: { channel: 'partner_phone', target: phone, createdAt: { [Op.gte]: new Date(Date.now() - 60_000) } }, order: [['createdAt', 'DESC']] });
+    if (latest) return res.status(429).json({ error: 'Please wait one minute before requesting another code' });
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const sent = await sendLoginOtpSms(phone, code);
+    if (!sent && !(process.env.OTP_DEBUG_RESPONSE === 'true' && process.env.NODE_ENV !== 'production')) return res.status(503).json({ error: 'SMS service is not configured. Please try again later.' });
+    await AuthOtp.create({ channel: 'partner_phone', target: phone, codeHash: otpHash(phone, code), expiresAt: new Date(Date.now() + 10 * 60_000), attempts: 0 });
+    const body: { message: string; phone: string; testCode?: string } = { message: 'Verification code sent. It expires in 10 minutes.', phone };
+    if (process.env.OTP_DEBUG_RESPONSE === 'true' && process.env.NODE_ENV !== 'production') body.testCode = code;
+    res.json(body);
+  } catch (error) {
+    const routeError = error as Error & { status?: number };
+    res.status(routeError.status || 400).json({ error: routeError.message || 'Unable to send phone verification code' });
+  }
+}
+
+export async function post__partner_phone_otp_verify(req: Request, res: Response) {
+  try {
+    const phone = normalisePhone(req.body.phone);
+    const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    if (!phone || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid phone number and 6-digit code' });
+    const user = await activePartnerForPhone(phone);
+    const otp = await AuthOtp.findOne({ where: { channel: 'partner_phone', target: phone, usedAt: null }, order: [['createdAt', 'DESC']] });
+    if (!otp || otp.expiresAt.getTime() < Date.now()) return res.status(400).json({ error: 'This code has expired. Request a new one.' });
+    if (otp.attempts >= 5) return res.status(429).json({ error: 'Too many attempts. Request a new code.' });
+    if (otp.codeHash !== otpHash(phone, code)) { await otp.increment('attempts'); return res.status(401).json({ error: 'Incorrect verification code' }); }
+    await otp.update({ usedAt: new Date() });
+    res.json(issueSession(user));
+  } catch (error) {
+    const routeError = error as Error & { status?: number };
+    res.status(routeError.status || 400).json({ error: routeError.message || 'Unable to verify phone code' });
+  }
+}
+
+export async function post__partner_google(req: Request, res: Response) {
+  try {
+    const idToken = typeof req.body.idToken === 'string' ? req.body.idToken.trim() : '';
+    if (!idToken) return res.status(400).json({ error: 'Google ID token is required' });
+    const profile = await verifyGoogleIdToken(idToken);
+    const user = await activePartnerForEmail(profile.email);
+    res.json(issueSession(user));
+  } catch (error) {
+    const routeError = error as Error & { status?: number };
+    res.status(routeError.status || 400).json({ error: routeError.message || 'Unable to continue with Google' });
+  }
 }

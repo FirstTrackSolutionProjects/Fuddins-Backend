@@ -80,6 +80,8 @@ export async function createVendorOrderRecords(order: Order) {
       if(createdNow) {
         for(const i of items) await OrderItem.create({orderId:order.id,vendorId,productId:Number(i.productId),productName:String(i.name||map.get(Number(i.productId))?.name||'Product'),sku:i.sku||null,variationId:i.variationId||null,quantity:Number(i.quantity||1),unitPrice:Number(i.price||0),discount:0,tax:0,subtotal:Number(i.price||0)*Number(i.quantity||1),itemStatus:'pending'},{transaction});
         await VendorSettlement.findOrCreate({where:{orderId:order.id,vendorId,transactionType:'order'},defaults:{orderId:order.id,vendorId,transactionType:'order',grossAmount:subtotal,commissionAmount:commission,netAmount:payable,paidAmount:0,status:'pending'},transaction});
+        const vendor = await Vendor.findByPk(vendorId, { transaction });
+        if (vendor?.userId) await Notification.create({ userId: vendor.userId, type: 'new_vendor_order', title: 'New order received', message: `Order #${order.id} is waiting for your acceptance.`, data: JSON.stringify({ vendorOrderId: vo.id, orderId: order.id }) }, { transaction });
       }
       created.push(vo);
     }

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken, isPartnerRole, type AuthenticatedRequest } from '../middleware/auth.js';
-import { post__register, post__login_1, post__password_reset_request_2, post__password_reset_confirm_3, post__partner_login_4, get__partner_setup_status_5, post__partner_setup_admin_6, post__email_otp_request_7, post__google_8, post__email_otp_verify_9, post__phone_otp_request_10, post__phone_otp_verify_11, get__me_12 } from '../controllers/authController.js';
+import { post__register, post__login_1, post__password_reset_request_2, post__password_reset_confirm_3, post__partner_login_4, get__partner_setup_status_5, post__partner_setup_admin_6, post__email_otp_request_7, post__google_8, post__email_otp_verify_9, post__phone_otp_request_10, post__phone_otp_verify_11, get__me_12, post__partner_email_otp_request, post__partner_email_otp_verify, post__partner_phone_otp_request, post__partner_phone_otp_verify, post__partner_google } from '../controllers/authController.js';
 
 const router = Router();
 
@@ -9,6 +9,11 @@ router.post('/login', post__login_1);
 router.post('/password-reset/request', post__password_reset_request_2);
 router.post('/password-reset/confirm', post__password_reset_confirm_3);
 router.post('/partner/login', post__partner_login_4);
+router.post('/partner/email-otp/request', post__partner_email_otp_request);
+router.post('/partner/email-otp/verify', post__partner_email_otp_verify);
+router.post('/partner/phone-otp/request', post__partner_phone_otp_request);
+router.post('/partner/phone-otp/verify', post__partner_phone_otp_verify);
+router.post('/partner/google', post__partner_google);
 router.get('/partner/setup-status', get__partner_setup_status_5);
 router.post('/partner/setup-admin', post__partner_setup_admin_6);
 router.post('/email-otp/request', post__email_otp_request_7);

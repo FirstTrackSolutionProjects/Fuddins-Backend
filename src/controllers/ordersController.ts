@@ -41,7 +41,14 @@ function variationLabel(variation: ProductVariation) {
 
 export async function get(_req: Request, res: Response) {
   const orders = await Order.findAll({ order: [['createdAt', 'DESC']] });
-  res.json(orders);
+  const rawItems = orders.map((order) => {
+    try { return JSON.parse(order.items || '[]') as Array<Record<string, unknown>>; }
+    catch { return [] as Array<Record<string, unknown>>; }
+  });
+  const productIds = [...new Set(rawItems.flat().map((item) => Number(item.productId)).filter(Number.isInteger))];
+  const products = productIds.length ? await Product.findAll({ where: { id: { [Op.in]: productIds } }, attributes: ['id', 'name', 'imageUrl'] }) : [];
+  const imageByProductId = new Map(products.map((product) => [product.id, product.imageUrl]));
+  res.json(orders.map((order, index) => ({ ...order.toJSON(), items: rawItems[index].map((item) => ({ ...item, imageUrl: imageByProductId.get(Number(item.productId)) || item.imageUrl || item.image || null })) })));
 
 }
 

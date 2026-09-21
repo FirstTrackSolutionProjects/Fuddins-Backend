@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken, type AuthenticatedRequest, requireAdmin } from '../middleware/auth.js';
-import { get__wallet, get__wallet_users_userId_1, post__wallet_transactions_2, get__rewards_3, get__rewards_users_userId_4, post__rewards_transactions_5, get__vendors_6, post__vendors_register_7, post__vendors_8, post__vendors_id_approve_9, post__vendors_id_reject_18, post__vendors_id_suspend_19, post__vendors_id_reactivate_20, put__vendors_id_10, get__vendor_settlements_11, post__vendor_settlements_12, put__vendor_settlements_id_status_13, get__vendor_payout_requests_14, put__vendor_payout_requests_id_status_15, get__invoices_16, get__orders_orderId_invoice_pdf_17, vendorRegistrationUpload } from '../controllers/commerceController.js';
+import { get__wallet, get__wallet_users_userId_1, post__wallet_transactions_2, get__rewards_3, get__rewards_users_userId_4, post__rewards_transactions_5, get__vendors_6, post__vendors_register_7, post__vendors_membership_payment_link_21, get__vendors_membership_status_22, post__vendors_8, post__vendors_id_approve_9, post__vendors_id_reject_18, post__vendors_id_suspend_19, post__vendors_id_reactivate_20, put__vendors_id_10, get__vendor_settlements_11, post__vendor_settlements_12, put__vendor_settlements_id_status_13, get__vendor_payout_requests_14, put__vendor_payout_requests_id_status_15, get__invoices_16, get__orders_orderId_invoice_pdf_17, vendorRegistrationUpload } from '../controllers/commerceController.js';
 
 const router = Router();
 
@@ -12,6 +12,8 @@ router.get('/rewards/users/:userId', authenticateToken, get__rewards_users_userI
 router.post('/rewards/transactions', authenticateToken, requireAdmin, post__rewards_transactions_5);
 router.get('/vendors', authenticateToken, requireAdmin, get__vendors_6);
 router.post('/vendors/register', vendorRegistrationUpload.fields([{ name: 'gstCertificate', maxCount: 1 }, { name: 'fssaiCertificate', maxCount: 1 }, { name: 'bankPassbook', maxCount: 1 }, { name: 'otherLicence', maxCount: 1 }]), post__vendors_register_7);
+router.post('/vendors/membership/payment-link', post__vendors_membership_payment_link_21);
+router.get('/vendors/membership/status', get__vendors_membership_status_22);
 router.post('/vendors', authenticateToken, requireAdmin, post__vendors_8);
 router.post('/vendors/:id/approve', authenticateToken, requireAdmin, post__vendors_id_approve_9);
 router.post('/vendors/:id/reject', authenticateToken, requireAdmin, post__vendors_id_reject_18);

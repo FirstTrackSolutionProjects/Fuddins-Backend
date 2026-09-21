@@ -1,10 +1,15 @@
 import type { Request, Response } from 'express';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import Category from '../models/Category.js';
+import Product from '../models/Product.js';
 
 export async function get(_req: Request, res: Response) {
   const categories = await Category.findAll({ order: [['name', 'ASC']] });
-  res.json(categories);
+  const products = await Product.findAll({ attributes: ['id', 'categoryId', 'imageUrl'] });
+  res.json(categories.map((category) => {
+    const categoryProducts = products.filter((product) => product.categoryId === category.id);
+    return { ...category.toJSON(), productCount: categoryProducts.length, imageUrl: categoryProducts.find((product) => product.imageUrl)?.imageUrl || null };
+  }));
 
 }
 

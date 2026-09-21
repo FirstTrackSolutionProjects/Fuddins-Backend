@@ -15,6 +15,7 @@
     "migrate:menu-uploads": "node --loader ts-node/esm src/scripts/migrateMenuUploadSubmissions.ts",
     "migrate:onboarding-enquiries": "node --loader ts-node/esm src/scripts/migrateOnboardingEnquiries.ts",
     "migrate:user-notifications": "node --loader ts-node/esm src/scripts/migrateUserNotificationPreferences.ts"
+    ,"migrate:vendor-store-setup": "node --loader ts-node/esm src/scripts/migrateVendorStoreSetup.ts"
   },
   "dependencies": {
     "cors": "^2.8.0",

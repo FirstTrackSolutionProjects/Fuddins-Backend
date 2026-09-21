@@ -13,6 +13,16 @@ class Vendor extends Model {
   declare status: string;
   declare passwordHash: string | null;
   declare profile: string | null;
+  declare storeLogoUrl: string | null;
+  declare storeBannerUrl: string | null;
+  declare address1: string | null;
+  declare address2: string | null;
+  declare city: string | null;
+  declare postcode: string | null;
+  declare country: string | null;
+  declare state: string | null;
+  declare storeLocation: string | null;
+  declare shopDescription: string | null;
   declare businessHours: string | null;
   declare acceptingOrders: boolean;
   declare minimumOrderAmount: number;
@@ -44,6 +54,16 @@ Vendor.init(
     status: { type: DataTypes.STRING, allowNull: false, defaultValue: 'active' },
     passwordHash: { type: DataTypes.STRING, allowNull: true },
     profile: { type: DataTypes.TEXT, allowNull: true },
+    storeLogoUrl: { type: DataTypes.STRING, allowNull: true },
+    storeBannerUrl: { type: DataTypes.STRING, allowNull: true },
+    address1: { type: DataTypes.STRING, allowNull: true },
+    address2: { type: DataTypes.STRING, allowNull: true },
+    city: { type: DataTypes.STRING, allowNull: true },
+    postcode: { type: DataTypes.STRING, allowNull: true },
+    country: { type: DataTypes.STRING, allowNull: true },
+    state: { type: DataTypes.STRING, allowNull: true },
+    storeLocation: { type: DataTypes.STRING, allowNull: true },
+    shopDescription: { type: DataTypes.TEXT, allowNull: true },
     businessHours: { type: DataTypes.STRING, allowNull: true },
     acceptingOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     minimumOrderAmount: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },

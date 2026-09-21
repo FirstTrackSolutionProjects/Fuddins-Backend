@@ -1,12 +1,13 @@
 import type { Request, Response } from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
 import Order from '../models/Order.js';
+import VendorOrder from '../models/VendorOrder.js';
 import WalletTransaction from '../models/WalletTransaction.js';
 import RewardTransaction from '../models/RewardTransaction.js';
 import WishlistItem from '../models/WishlistItem.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
-import { rewardBalance, walletBalance } from '../services/loyalty.js';
+import { refundOrderBalances, rewardBalance, walletBalance } from '../services/loyalty.js';
 import { hashPassword, verifyPassword } from '../utils/password.js';
 import { buildOrderTracking } from '../services/orderTracking.js';
 
@@ -35,6 +36,31 @@ export async function get__orders_id_tracking_1(req: Request, res: Response) {
   if (!order) return res.status(404).json({ error: 'Order not found' });
   res.json({ ...buildOrderTracking(order), shippingAddress: order.shippingAddress, deliveryNote: order.deliveryNote });
 
+}
+
+export async function post__orders_id_cancel_11(req: Request, res: Response) {
+  const user = (req as AuthenticatedRequest).user;
+  if (!user) return res.status(401).json({ error: 'Access token missing' });
+  const customer = await User.findByPk(user.id, { attributes: ['email'] });
+  const order = await Order.findOne({ where: { id: Number(req.params.id), email: customer?.email || user.email } });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (order.status !== 'pending') return res.status(400).json({ error: 'Orders can only be cancelled while pending' });
+
+  const vendorOrders = await VendorOrder.findAll({ where: { orderId: order.id } });
+  if (vendorOrders.some((vendorOrder) => vendorOrder.status !== 'pending')) {
+    return res.status(400).json({ error: 'This order is already being processed and can no longer be cancelled' });
+  }
+
+  const note = typeof req.body.reason === 'string' && req.body.reason.trim()
+    ? `Cancelled by customer: ${req.body.reason.trim()}`
+    : 'Cancelled by customer';
+  const now = new Date();
+  await Promise.all([
+    order.update({ status: 'cancelled', deliveryNote: note }),
+    ...vendorOrders.map((vendorOrder) => vendorOrder.update({ status: 'cancelled', cancelledAt: now, cancellationReason: note })),
+  ]);
+  void refundOrderBalances(order.id);
+  res.json({ ...order.toJSON(), message: 'Order cancelled successfully' });
 }
 
 export async function get__wallet_2(req: Request, res: Response) {

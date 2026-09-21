@@ -12,6 +12,16 @@ import User from '../models/User.js';
 import VendorNotice from '../models/VendorNotice.js';
 import { razorpayConfig } from './paymentsController.js';
 
+const MEMBERSHIP_PLANS = [
+  { name: 'Free Plan', fee: 0, durationDays: 90 },
+  { name: 'Bronze Insta', fee: 499, durationDays: 90 },
+  { name: 'Silver Insta', fee: 799, durationDays: 90 },
+  { name: 'Gold Insta', fee: 999, durationDays: 90 },
+  { name: 'Diamond Insta', fee: 1499, durationDays: 90 },
+  { name: 'Platinum Insta', fee: 1999, durationDays: 90 },
+] as const;
+const membershipPlan = (name: string) => MEMBERSHIP_PLANS.find((plan) => plan.name === name);
+
 function partnerUser(req: AuthenticatedRequest) {
   return req.user!;
 }
@@ -134,6 +144,16 @@ export async function put__vendor_profile_2(req: Request, res: Response) {
     phone: typeof req.body.phone === 'string' ? req.body.phone.trim() : vendor.phone,
     address: typeof req.body.address === 'string' ? req.body.address.trim() : vendor.address,
     profile: typeof req.body.profile === 'string' ? req.body.profile : vendor.profile,
+    storeLogoUrl: typeof req.body.storeLogoUrl === 'string' ? req.body.storeLogoUrl.trim() : vendor.storeLogoUrl,
+    storeBannerUrl: typeof req.body.storeBannerUrl === 'string' ? req.body.storeBannerUrl.trim() : vendor.storeBannerUrl,
+    address1: typeof req.body.address1 === 'string' ? req.body.address1.trim() : vendor.address1,
+    address2: typeof req.body.address2 === 'string' ? req.body.address2.trim() : vendor.address2,
+    city: typeof req.body.city === 'string' ? req.body.city.trim() : vendor.city,
+    postcode: typeof req.body.postcode === 'string' ? req.body.postcode.trim() : vendor.postcode,
+    country: typeof req.body.country === 'string' ? req.body.country.trim() : vendor.country,
+    state: typeof req.body.state === 'string' ? req.body.state.trim() : vendor.state,
+    storeLocation: typeof req.body.storeLocation === 'string' ? req.body.storeLocation.trim() : vendor.storeLocation,
+    shopDescription: typeof req.body.shopDescription === 'string' ? req.body.shopDescription : vendor.shopDescription,
     businessHours: typeof req.body.businessHours === 'string' ? req.body.businessHours.trim() : vendor.businessHours,
     acceptingOrders: typeof req.body.acceptingOrders === 'boolean' ? req.body.acceptingOrders : vendor.acceptingOrders,
     minimumOrderAmount: Number.isFinite(Number(req.body.minimumOrderAmount)) ? Math.max(0, Number(req.body.minimumOrderAmount)) : vendor.minimumOrderAmount,
@@ -152,12 +172,12 @@ export async function get__vendor_membership_3(req: Request, res: Response) {
       const response = await fetch(`https://api.razorpay.com/v1/payment_links/${vendor.membershipPaymentLinkId}`, { headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}` } });
       const link = await response.json() as { status?: string; payments?: Array<{ id?: string }> };
       const status = link.status === 'paid' ? 'paid' : ['cancelled', 'expired'].includes(String(link.status)) ? 'failed' : 'pending';
-      if (status !== vendor.membershipPaymentStatus) await vendor.update({ membershipPaymentStatus: status, membershipStatus: status === 'paid' ? 'active' : vendor.membershipStatus, membershipPaymentId: link.payments?.[0]?.id || vendor.membershipPaymentId, membershipStartedAt: status === 'paid' && !vendor.membershipStartedAt ? new Date() : vendor.membershipStartedAt, membershipExpiresAt: status === 'paid' && !vendor.membershipExpiresAt ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : vendor.membershipExpiresAt });
+      if (status !== vendor.membershipPaymentStatus) await vendor.update({ membershipPaymentStatus: status, membershipStatus: status === 'paid' ? 'active' : vendor.membershipStatus, membershipPaymentId: link.payments?.[0]?.id || vendor.membershipPaymentId, membershipStartedAt: status === 'paid' && !vendor.membershipStartedAt ? new Date() : vendor.membershipStartedAt, membershipExpiresAt: status === 'paid' && !vendor.membershipExpiresAt ? new Date(Date.now() + (membershipPlan(vendor.membershipPlan)?.durationDays || 90) * 24 * 60 * 60 * 1000) : vendor.membershipExpiresAt });
     } catch {
       // Payment status will be updated by the Razorpay webhook when configured.
     }
   }
-  res.json({ membershipPlan: vendor.membershipPlan, membershipStatus: vendor.membershipStatus, membershipFee: vendor.membershipFee, paymentStatus: vendor.membershipPaymentStatus, startedAt: vendor.membershipStartedAt, expiresAt: vendor.membershipExpiresAt, plans: [{ name: 'Starter', fee: 0, durationDays: 365 }, { name: 'Standard', fee: 999, durationDays: 365 }, { name: 'Premium', fee: 2499, durationDays: 365 }] });
+  res.json({ membershipPlan: vendor.membershipPlan, membershipStatus: vendor.membershipStatus, membershipFee: vendor.membershipFee, paymentStatus: vendor.membershipPaymentStatus, startedAt: vendor.membershipStartedAt, expiresAt: vendor.membershipExpiresAt, plans: MEMBERSHIP_PLANS });
 
 }
 
@@ -165,9 +185,9 @@ export async function post__vendor_membership_request_4(req: Request, res: Respo
   const vendor = await currentVendor(req as AuthenticatedRequest);
   if (!vendor) return res.status(404).json({ error: 'Vendor profile not found' });
   const plan = String(req.body.plan || '').trim();
-  const plans: Record<string, number> = { Starter: 0, Standard: 999, Premium: 2499 };
-  if (!Object.prototype.hasOwnProperty.call(plans, plan)) return res.status(400).json({ error: 'Choose a valid membership plan' });
-  await vendor.update({ membershipPlan: plan, membershipFee: plans[plan], membershipStatus: 'pending', membershipPaymentStatus: plans[plan] === 0 ? 'paid' : 'unpaid' });
+  const selectedPlan = membershipPlan(plan);
+  if (!selectedPlan) return res.status(400).json({ error: 'Choose a valid membership plan' });
+  await vendor.update({ membershipPlan: plan, membershipFee: selectedPlan.fee, membershipStatus: selectedPlan.fee === 0 ? 'active' : 'pending', membershipPaymentStatus: selectedPlan.fee === 0 ? 'paid' : 'unpaid', membershipStartedAt: selectedPlan.fee === 0 ? new Date() : null, membershipExpiresAt: selectedPlan.fee === 0 ? new Date(Date.now() + selectedPlan.durationDays * 24 * 60 * 60 * 1000) : null });
   res.json(vendor);
 
 }
@@ -177,14 +197,14 @@ export async function post__vendor_membership_payment_link_5(req: Request, res: 
     const vendor = await currentVendor(req as AuthenticatedRequest);
     if (!vendor) return res.status(404).json({ error: 'Vendor profile not found' });
     const plan = String(req.body.plan || '').trim();
-    const fees: Record<string, number> = { Standard: 999, Premium: 2499 };
-    if (!Object.prototype.hasOwnProperty.call(fees, plan)) return res.status(400).json({ error: 'Choose a paid membership plan' });
+    const selectedPlan = membershipPlan(plan);
+    if (!selectedPlan || selectedPlan.fee <= 0) return res.status(400).json({ error: 'Choose a paid membership plan' });
     if (!vendor.email) return res.status(400).json({ error: 'Vendor email is required for membership payment' });
     const { keyId, keySecret } = razorpayConfig();
-    const response = await fetch('https://api.razorpay.com/v1/payment_links', { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: fees[plan] * 100, currency: 'INR', reference_id: `vendor_membership_${vendor.id}`, description: `Foodiens ${plan} vendor membership`, customer: { name: vendor.storeName, email: vendor.email }, notify: { sms: false, email: false }, reminder_enable: false, expire_by: Math.floor(Date.now() / 1000) + 24 * 60 * 60, notes: { vendor_id: String(vendor.id), membership_plan: plan } }) });
+    const response = await fetch('https://api.razorpay.com/v1/payment_links', { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: selectedPlan.fee * 100, currency: 'INR', reference_id: `vendor_membership_${vendor.id}_${Date.now()}`, description: `Foodiens ${plan} vendor membership`, customer: { name: vendor.storeName, email: vendor.email }, notify: { sms: false, email: false }, reminder_enable: false, expire_by: Math.floor(Date.now() / 1000) + 24 * 60 * 60, notes: { vendor_id: String(vendor.id), membership_plan: plan } }) });
     const link = await response.json() as { id?: string; short_url?: string; error?: { description?: string } };
     if (!response.ok || !link.id || !link.short_url) return res.status(502).json({ error: link.error?.description || 'Unable to create membership payment link' });
-    await vendor.update({ membershipPlan: plan, membershipFee: fees[plan], membershipStatus: 'pending', membershipPaymentStatus: 'pending', membershipPaymentLinkId: link.id });
+    await vendor.update({ membershipPlan: plan, membershipFee: selectedPlan.fee, membershipStatus: 'pending', membershipPaymentStatus: 'pending', membershipPaymentLinkId: link.id, membershipExpiresAt: null });
     res.status(201).json({ paymentUrl: link.short_url, paymentStatus: 'pending' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to start membership payment';
@@ -445,7 +465,8 @@ export async function get__delivery_summary_26(req: Request, res: Response) {
   const active = orders.filter((order) => !['delivered', 'failed'].includes(order.deliveryStatus));
   const delivered = orders.filter((order) => order.deliveryStatus === 'delivered');
   const codToCollect = active.filter((order) => order.paymentMethod === 'cod' && order.paymentStatus !== 'paid').reduce((sum, order) => sum + Number(order.total || 0), 0);
-  res.json({ total: orders.length, active: active.length, delivered: delivered.length, failed: orders.filter((order) => order.deliveryStatus === 'failed').length, codToCollect: Number(codToCollect.toFixed(2)), todayDelivered: delivered.filter((order) => order.deliveredAt && order.deliveredAt.toDateString() === new Date().toDateString()).length });
+  const walletBalance = delivered.length * 40;
+  res.json({ total: orders.length, active: active.length, delivered: delivered.length, failed: orders.filter((order) => order.deliveryStatus === 'failed').length, codToCollect: Number(codToCollect.toFixed(2)), todayDelivered: delivered.filter((order) => order.deliveredAt && order.deliveredAt.toDateString() === new Date().toDateString()).length, earningPerDelivery: 40, totalEarnings: walletBalance, walletBalance });
 
 }
 

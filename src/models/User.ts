@@ -19,6 +19,11 @@ class User extends Model {
   declare deliveryVehicleNumber: string | null;
   declare deliveryStatus: string;
   declare deliveryLastSeenAt: Date | null;
+  declare payoutMethod: string | null;
+  declare payoutUpiId: string | null;
+  declare payoutAccountNumber: string | null;
+  declare payoutIfsc: string | null;
+  declare payoutAccountHolderName: string | null;
   declare active: boolean;
 }
 
@@ -82,6 +87,11 @@ User.init(
     deliveryVehicleNumber: { type: DataTypes.STRING, allowNull: true },
     deliveryStatus: { type: DataTypes.STRING, allowNull: false, defaultValue: 'offline' },
     deliveryLastSeenAt: { type: DataTypes.DATE, allowNull: true },
+    payoutMethod: { type: DataTypes.STRING, allowNull: true },
+    payoutUpiId: { type: DataTypes.STRING, allowNull: true },
+    payoutAccountNumber: { type: DataTypes.STRING, allowNull: true },
+    payoutIfsc: { type: DataTypes.STRING, allowNull: true },
+    payoutAccountHolderName: { type: DataTypes.STRING, allowNull: true },
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   },
   {

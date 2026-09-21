@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
 import Category from '../models/Category.js';
+import Vendor from '../models/Vendor.js';
 import Coupon from '../models/Coupon.js';
 import { hashPassword } from '../utils/password.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
@@ -83,7 +84,12 @@ export async function listProducts(req: Request, res: Response) {
   const requester = (req as AuthenticatedRequest).user;
   const isAdmin = requester?.role === 'admin' || requester?.role === 'admin_team';
   if (!isAdmin) where.approvalStatus = 'approved';
-  const include = [{ model: Category, as: 'category', attributes: ['id', 'name'] }];
+  // Public product cards need the owning store as well as the category.
+  // The optional join preserves products that have not yet been linked to a vendor.
+  const include = [
+    { model: Category, as: 'category', attributes: ['id', 'name'] },
+    { model: Vendor, as: 'vendor', attributes: ['id', 'storeName', 'address', 'status'], required: false },
+  ];
   const order: [string, string][] = [['createdAt', 'DESC']];
   if (!hasPagination) {
     const products = await Product.findAll({ where, include, order });

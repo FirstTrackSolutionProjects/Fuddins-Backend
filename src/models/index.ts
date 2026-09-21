@@ -24,6 +24,7 @@ import VendorPayoutRequest from './VendorPayoutRequest.js';
 import VendorSettlement from './VendorSettlement.js';
 import WishlistItem from './WishlistItem.js';
 import WalletTransaction from './WalletTransaction.js';
+import DeliveryPayoutRequest from './DeliveryPayoutRequest.js';
 import { sequelize, Sequelize } from './sequelize-instance.js';
 
 const db = {
@@ -51,6 +52,7 @@ const db = {
   VendorSettlement,
   WishlistItem,
   WalletTransaction,
+  DeliveryPayoutRequest,
 };
 
 export default db;

@@ -22,6 +22,7 @@ import marketplaceRoutes from './routes/marketplace.js';
 import adminDeliveryUsersRoutes from './routes/adminDeliveryUsers.js';
 import deliveryRoutes from './routes/delivery.js';
 import { verifyMailTransport } from './services/email.js';
+import { razorpayWebhook } from './controllers/paymentsController.js';
 
 dotenv.config();
 
@@ -34,6 +35,9 @@ const __dirname = path.dirname(__filename);
 const legacyUploadsPath = path.resolve(__dirname, '../../../domains/fuddins.com/public_html/wp-content/uploads');
 
 app.use(cors());
+// Razorpay signatures must be calculated from the untouched request body.
+// This must be registered before express.json().
+app.post('/payments/razorpay/webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
 app.use(express.json());
 
 app.get('/health', (_req, res) => {

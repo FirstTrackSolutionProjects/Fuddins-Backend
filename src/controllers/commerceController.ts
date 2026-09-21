@@ -15,12 +15,26 @@ import WalletTransaction from '../models/WalletTransaction.js';
 import { generateInvoicePdf } from '../services/invoice.js';
 import { addRewardTransaction, addWalletTransaction, rewardBalance, walletBalance } from '../services/loyalty.js';
 import { hashPassword } from '../utils/password.js';
+import jwt from 'jsonwebtoken';
+import { razorpayConfig } from './paymentsController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const vendorDocumentDir = path.join(__dirname, '../../uploads/vendor-documents');
 fs.mkdirSync(vendorDocumentDir, { recursive: true });
 const acceptedVendorDocumentTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']);
+
+function onboardingSecret() {
+  return process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'dev-secret');
+}
+
+function onboardingVendor(req: Request) {
+  const token = String(req.header('x-vendor-onboarding-token') || '');
+  if (!token || !onboardingSecret()) throw new Error('Your onboarding session has expired. Please register again.');
+  const payload = jwt.verify(token, onboardingSecret()) as { vendorId?: number; email?: string; purpose?: string };
+  if (payload.purpose !== 'vendor-onboarding' || !Number.isInteger(payload.vendorId)) throw new Error('Invalid onboarding session');
+  return payload;
+}
 
 export const vendorRegistrationUpload = multer({
   storage: multer.diskStorage({
@@ -164,11 +178,44 @@ export async function post__vendors_register_7(req: Request, res: Response) {
     }
 
     const vendor = await Vendor.create({ storeName, email, phone, address, profile, status: 'pending', passwordHash: hashPassword(password), membershipPlan: plan, membershipFee: fees[plan], membershipStatus: 'pending', membershipPaymentStatus: fees[plan] === 0 ? 'paid' : 'unpaid' });
-    res.status(201).json({ id: vendor.id, message: 'Vendor registration received. Admin must approve it before this login becomes active.' });
+    const onboardingToken = jwt.sign({ vendorId: vendor.id, email, purpose: 'vendor-onboarding' }, onboardingSecret(), { expiresIn: '2h' });
+    res.status(201).json({ id: vendor.id, onboardingToken, membershipFee: vendor.membershipFee, message: 'Registration saved. Continue to secure payment.' });
   } catch {
     res.status(400).json({ error: 'Unable to submit vendor registration' });
   }
 
+}
+
+export async function post__vendors_membership_payment_link_21(req: Request, res: Response) {
+  try {
+    const session = onboardingVendor(req);
+    const vendor = await Vendor.findByPk(session.vendorId);
+    if (!vendor || vendor.email !== session.email) return res.status(404).json({ error: 'Vendor registration not found' });
+    if (vendor.membershipFee <= 0) {
+      await vendor.update({ membershipPaymentStatus: 'paid', membershipStatus: 'active', membershipStartedAt: new Date(), membershipExpiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) });
+      return res.json({ paymentStatus: 'paid', membershipStatus: 'active' });
+    }
+    if (vendor.membershipPaymentLinkId && vendor.membershipPaymentStatus === 'pending') {
+      return res.json({ paymentStatus: 'pending', paymentUrl: null, message: 'A payment link has already been created. Request a new link after it expires.' });
+    }
+    const { keyId, keySecret } = razorpayConfig();
+    const response = await fetch('https://api.razorpay.com/v1/payment_links', { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: Math.round(vendor.membershipFee * 100), currency: 'INR', reference_id: `vendor_membership_${vendor.id}_${Date.now()}`, description: `Foodiens ${vendor.membershipPlan} membership`, customer: { name: vendor.storeName, email: vendor.email }, notify: { sms: false, email: false }, reminder_enable: false, expire_by: Math.floor(Date.now() + 24 * 60 * 60 * 1000), notes: { vendor_id: String(vendor.id), membership_plan: vendor.membershipPlan } }) });
+    const link = await response.json() as { id?: string; short_url?: string; error?: { description?: string } };
+    if (!response.ok || !link.id || !link.short_url) return res.status(502).json({ error: link.error?.description || 'Unable to create Razorpay payment link' });
+    await vendor.update({ membershipPaymentLinkId: link.id, membershipPaymentStatus: 'pending', membershipStatus: 'pending' });
+    res.json({ paymentStatus: 'pending', paymentUrl: link.short_url });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to start payment' });
+  }
+}
+
+export async function get__vendors_membership_status_22(req: Request, res: Response) {
+  try {
+    const session = onboardingVendor(req);
+    const vendor = await Vendor.findByPk(session.vendorId);
+    if (!vendor || vendor.email !== session.email) return res.status(404).json({ error: 'Vendor registration not found' });
+    res.json({ paymentStatus: vendor.membershipPaymentStatus, membershipStatus: vendor.membershipStatus, plan: vendor.membershipPlan, fee: vendor.membershipFee });
+  } catch (error) { res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to check payment status' }); }
 }
 
 export async function post__vendors_8(req: Request, res: Response) {
