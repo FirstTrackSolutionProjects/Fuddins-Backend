@@ -21,6 +21,7 @@ import paymentsRoutes from './routes/payments.js';
 import marketplaceRoutes from './routes/marketplace.js';
 import adminDeliveryUsersRoutes from './routes/adminDeliveryUsers.js';
 import deliveryRoutes from './routes/delivery.js';
+import bannersRoutes from './routes/banners.js';
 import { verifyMailTransport } from './services/email.js';
 import { razorpayWebhook } from './controllers/paymentsController.js';
 
@@ -62,6 +63,7 @@ app.use('/payments', paymentsRoutes);
 app.use('/marketplace', marketplaceRoutes);
 app.use('/admin', adminDeliveryUsersRoutes);
 app.use('/delivery', deliveryRoutes);
+app.use('/banners', bannersRoutes);
 app.use('/uploads', uploadsRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/legacy-uploads', express.static(legacyUploadsPath));
