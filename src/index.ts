@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {sequelize} from './models/index.js';
@@ -24,8 +24,6 @@ import deliveryRoutes from './routes/delivery.js';
 import bannersRoutes from './routes/banners.js';
 import { verifyMailTransport } from './services/email.js';
 import { razorpayWebhook } from './controllers/paymentsController.js';
-
-dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT || 5000);
