@@ -4,9 +4,14 @@ import { Op } from 'sequelize';
 import Vendor from '../models/Vendor.js';
 
 export async function listPublicBanners(_req: Request, res: Response) {
-  const banners = await Banner.findAll({ where: { active: true }, order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
-  const vendors = await Vendor.findAll({ where: { status: 'active', storeBannerUrl: { [Op.ne]: null } }, attributes: ['id', 'storeName', 'storeBannerUrl'], order: [['storeName', 'ASC']] });
-  res.json([...banners, ...vendors.map((vendor) => ({ id: `vendor-${vendor.id}`, title: vendor.storeName, subtitle: 'Featured store', imageUrl: vendor.storeBannerUrl, linkUrl: null, active: true, sortOrder: 1000 + vendor.id }))]);
+  try {
+    const banners = await Banner.findAll({ where: { active: true }, order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
+    const vendors = await Vendor.findAll({ where: { status: 'active', storeBannerUrl: { [Op.ne]: null } }, attributes: ['id', 'storeName', 'storeBannerUrl'], order: [['storeName', 'ASC']] });
+    res.json([...banners, ...vendors.map((vendor) => ({ id: `vendor-${vendor.id}`, title: vendor.storeName, subtitle: 'Featured store', imageUrl: vendor.storeBannerUrl, linkUrl: null, active: true, sortOrder: 1000 + vendor.id }))]);
+  } catch (error) {
+    console.error('Unable to load public banners:', error);
+    res.status(500).json({ error: 'Unable to load banners' });
+  }
 }
 
 export async function listBanners(_req: Request, res: Response) {
