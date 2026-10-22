@@ -492,6 +492,11 @@ async function importLegacyCatalog(connection: Connection) {
 }
 
 async function importLegacy() {
+  const importScope = process.env.LEGACY_IMPORT_SCOPE;
+  if (importScope !== 'catalog' && importScope !== 'all') {
+    throw new Error("Set LEGACY_IMPORT_SCOPE to 'catalog' or 'all' before running the legacy importer.");
+  }
+
   const legacyDb = process.env.LEGACY_DB_NAME || 'fuddinsmart_db';
   console.log(`Connecting to legacy database ${legacyDb}...`);
   const connection = await mysql.createConnection({
@@ -508,7 +513,7 @@ async function importLegacy() {
   await sequelize.sync({ alter: process.env.DB_SYNC_ALTER === 'true' });
   console.log('Modern database ready.');
 
-  if (process.env.LEGACY_IMPORT_SCOPE === 'catalog') {
+  if (importScope === 'catalog') {
     await importLegacyCatalog(connection);
     await connection.end();
     await sequelize.close();
