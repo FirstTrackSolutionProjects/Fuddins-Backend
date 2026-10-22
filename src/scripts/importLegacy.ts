@@ -419,6 +419,78 @@ async function tableRowCount(connection: Connection, tableName: string) {
   return Number(row?.count || 0);
 }
 
+/** Import only the public WooCommerce catalog, leaving customer and order data untouched. */
+async function importLegacyCatalog(connection: Connection) {
+  console.log('Importing product categories only...');
+  const [legacyCategories] = await connection.query(
+    `SELECT t.term_id, t.name
+     FROM wp_terms t
+     JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
+     WHERE tt.taxonomy = 'product_cat'
+     ORDER BY t.name`
+  );
+
+  const categoryByName = new Map<string, Category>();
+  for (const item of legacyCategories as LegacyCategory[]) {
+    const [category] = await Category.findOrCreate({ where: { name: item.name } });
+    categoryByName.set(item.name, category);
+  }
+  console.log(`Product categories ready: ${categoryByName.size}`);
+
+  console.log('Loading published WooCommerce products...');
+  const [legacyProductRows] = await connection.query(
+    `SELECT p.ID id, p.post_title name, p.post_excerpt description, p.post_content fullDescription
+     FROM wp_posts p
+     WHERE p.post_status = 'publish' AND p.post_type = 'product'
+     ORDER BY p.post_date DESC`
+  );
+  const legacyProducts = await loadLegacyProducts(connection, legacyProductRows as LegacyProductBase[]);
+  const variationsByProductId = await loadLegacyProductVariations(connection, legacyProducts.map((product) => product.id));
+  console.log(`Published products found: ${legacyProducts.length}`);
+
+  let importedProducts = 0;
+  for (const item of legacyProducts) {
+    if (!item.name) continue;
+
+    const category = item.categoryName ? categoryByName.get(item.categoryName) : null;
+    const existing = await Product.findOne({ where: { legacyProductId: item.id } });
+    let sku = item.sku?.trim() || null;
+    if (sku) {
+      const skuOwner = await Product.findOne({ where: { sku } });
+      if (skuOwner && skuOwner.legacyProductId !== item.id) {
+        console.warn(`Duplicate SKU '${sku}' for legacy product ${item.id}; importing this product without the conflicting SKU.`);
+        sku = null;
+      }
+    }
+
+    const payload = {
+      legacyProductId: item.id,
+      name: decodeHtml(item.name),
+      price: Number(item.salePrice || item.price || item.regularPrice || 0),
+      regularPrice: numberOrNull(item.regularPrice),
+      salePrice: numberOrNull(item.salePrice),
+      sku,
+      description: cleanText(item.description) || item.categoryName || '',
+      fullDescription: cleanText(item.fullDescription),
+      imageUrl: localUploadUrl(item.imageUrl),
+      galleryImages: item.galleryImageUrls
+        ? item.galleryImageUrls.split(',').map(localUploadUrl).filter(Boolean).join(',')
+        : null,
+      brand: item.brandName || null,
+      stockQuantity: numberOrNull(item.stockQuantity),
+      stockStatus: item.stockStatus || 'instock',
+      attributes: item.attributes || null,
+      variations: variationsByProductId.get(item.id) || null,
+      categoryId: category?.id || null,
+    };
+
+    if (existing) await existing.update(payload);
+    else await Product.create(payload);
+    importedProducts += 1;
+  }
+  console.log(`Published catalog products imported: ${importedProducts}`);
+}
+
 async function importLegacy() {
   const legacyDb = process.env.LEGACY_DB_NAME || 'fuddinsmart_db';
   console.log(`Connecting to legacy database ${legacyDb}...`);
@@ -435,6 +507,14 @@ async function importLegacy() {
   await sequelize.authenticate();
   await sequelize.sync({ alter: process.env.DB_SYNC_ALTER === 'true' });
   console.log('Modern database ready.');
+
+  if (process.env.LEGACY_IMPORT_SCOPE === 'catalog') {
+    await importLegacyCatalog(connection);
+    await connection.end();
+    await sequelize.close();
+    console.log(`Catalog-only import completed from ${legacyDb}.`);
+    return;
+  }
 
   console.log('Importing categories...');
   const [legacyCategories] = await connection.query(
