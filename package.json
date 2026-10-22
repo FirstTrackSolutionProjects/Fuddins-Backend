@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run migrate:deploy -- --env production && tsc -p tsconfig.json",
     "seed:admin": "node --loader ts-node/esm src/scripts/seedAdmin.ts",
     "import:legacy": "node --loader ts-node/esm src/scripts/importLegacy.ts",
     "link:legacy-vendors": "node --loader ts-node/esm src/scripts/linkLegacyProductVendors.ts",
