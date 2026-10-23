@@ -31,9 +31,9 @@ const host = process.env.HOST || '0.0.0.0';
 const syncAlter = process.env.DB_SYNC_ALTER === 'true' || process.env.NODE_ENV !== 'production';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Hostinger runs the app from a versioned build directory, so a path relative
-// to dist can point at the wrong location. Resolve the WordPress uploads folder
-// from the account home (or allow it to be configured explicitly).
+// Keep the current legacy path as a compatibility default until media has been
+// copied. Set LEGACY_UPLOADS_DIR to the persistent backend media directory to
+// complete the cutover without breaking image URLs during deployment.
 const legacyUploadsPath = process.env.LEGACY_UPLOADS_DIR
   ? path.resolve(process.env.LEGACY_UPLOADS_DIR)
   : path.resolve(process.env.HOME || __dirname, 'domains/fuddins.com/public_html/wp-content/uploads');
