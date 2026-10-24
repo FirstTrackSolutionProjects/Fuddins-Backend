@@ -26,6 +26,7 @@ import WishlistItem from './WishlistItem.js';
 import WalletTransaction from './WalletTransaction.js';
 import DeliveryPayoutRequest from './DeliveryPayoutRequest.js';
 import Banner from './Banner.js';
+import ProductReview from './ProductReview.js';
 import { sequelize, Sequelize } from './sequelize-instance.js';
 
 const db = {
@@ -55,6 +56,7 @@ const db = {
   WalletTransaction,
   DeliveryPayoutRequest,
   Banner,
+  ProductReview,
 };
 
 export default db;

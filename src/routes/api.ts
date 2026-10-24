@@ -13,6 +13,7 @@ import {
   updateCoupon,
   deleteCoupon,
 } from '../controllers/apiController.js';
+import { listProductReviews, submitProductReview } from '../controllers/productReviewsController.js';
 
 const router = Router();
 
@@ -20,6 +21,8 @@ router.get('/users', authenticateToken, requireAdmin, listUsers);
 router.post('/users', authenticateToken, requireAdmin, createUser);
 
 router.get('/products', optionalAuthenticateToken, listProducts);
+router.get('/products/:productId/reviews', listProductReviews);
+router.post('/products/:productId/reviews', authenticateToken, submitProductReview);
 router.post('/products', authenticateToken, requireAdmin, createProduct);
 router.put('/products/:id', authenticateToken, requireAdmin, updateProduct);
 router.delete('/products/:id', authenticateToken, requireAdmin, deleteProduct);
