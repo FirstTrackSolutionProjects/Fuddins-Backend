@@ -9,6 +9,7 @@ import DeliveryPayoutRequest from '../models/DeliveryPayoutRequest.js';
 import { createRazorpayXPayout } from '../services/razorpayx.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { attachOrderItems } from './marketplaceController.js';
+import { awardOrderRewards } from '../services/loyalty.js';
 
 function actor(req: Request) {
   return (req as AuthenticatedRequest).user!;
@@ -74,6 +75,7 @@ export async function updateDeliveryOrderStatus(req: Request, res: Response) {
           deliveredAt: now,
           ...(parentOrder.paymentMethod === 'cod' ? { paymentStatus: 'paid', paymentProvider: 'cod' } : {}),
         });
+        if (parentOrder.paymentStatus === 'paid') void awardOrderRewards(parentOrder).catch((error) => console.error('Could not award order/referral rewards:', error));
       }
     }
   }

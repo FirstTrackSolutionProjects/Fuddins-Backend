@@ -81,24 +81,67 @@ export async function refundOrderBalances(orderId: number) {
 }
 
 export async function awardOrderRewards(order: Order) {
-  const pointsPerRupee = Number(process.env.REWARD_POINTS_PER_RUPEE || 0.1);
-  if (!pointsPerRupee) return null;
+  if (order.paymentStatus !== 'paid') return null;
 
   const user = await User.findOne({ where: { email: order.email } });
   if (!user) return null;
 
-  const existing = await RewardTransaction.findOne({ where: { orderId: order.id, type: 'earn' } });
-  if (existing) return existing;
+  const pointsPerRupee = Number(process.env.REWARD_POINTS_PER_RUPEE || 0.1);
+  let orderReward: RewardTransaction | null = null;
+  if (pointsPerRupee > 0) {
+    const existing = await RewardTransaction.findOne({ where: { orderId: order.id, userId: user.id, type: 'earn' } });
+    const points = Math.floor(Number(order.subtotal ?? order.total) * pointsPerRupee);
+    if (!existing && points > 0) {
+      orderReward = await addRewardTransaction({
+        userId: user.id,
+        legacyUserId: user.legacyUserId,
+        orderId: order.id,
+        type: 'earn',
+        points,
+        description: `Reward points earned for order #${order.id}`,
+      });
+    } else {
+      orderReward = existing;
+    }
+  }
 
-  const points = Math.floor(Number(order.subtotal ?? order.total) * pointsPerRupee);
-  if (points <= 0) return null;
+  // Referral rewards apply once, on the invited customer's first paid order.
+  if (user.referredByUserId && user.referredByUserId !== user.id) {
+    const earlierPaidOrder = await Order.findOne({
+      where: { email: user.email, paymentStatus: 'paid', id: { [Op.ne]: order.id } },
+      attributes: ['id'],
+    });
+    if (!earlierPaidOrder) {
+      const referrer = await User.findByPk(user.referredByUserId);
+      if (referrer && referrer.role === 'user') {
+        const referrerRewardExists = await RewardTransaction.findOne({ where: { orderId: order.id, userId: referrer.id, type: 'referral' } });
+        if (!referrerRewardExists) {
+          const referrerPoints = Math.max(0, Math.floor(Number(process.env.REFERRAL_REFERRER_POINTS || 100)));
+          if (referrerPoints > 0) await addRewardTransaction({
+            userId: referrer.id,
+            legacyUserId: referrer.legacyUserId,
+            orderId: order.id,
+            type: 'referral',
+            points: referrerPoints,
+            description: `Referral reward for referralUserId=${user.id} first paid order #${order.id}`,
+          });
+        }
 
-  return addRewardTransaction({
-    userId: user.id,
-    legacyUserId: user.legacyUserId,
-    orderId: order.id,
-    type: 'earn',
-    points,
-    description: `Reward points earned for order #${order.id}`,
-  });
+        const friendRewardExists = await RewardTransaction.findOne({ where: { orderId: order.id, userId: user.id, type: 'referral_bonus' } });
+        if (!friendRewardExists) {
+          const friendPoints = Math.max(0, Math.floor(Number(process.env.REFERRAL_FRIEND_POINTS || 50)));
+          if (friendPoints > 0) await addRewardTransaction({
+            userId: user.id,
+            legacyUserId: user.legacyUserId,
+            orderId: order.id,
+            type: 'referral_bonus',
+            points: friendPoints,
+            description: `Welcome referral points for first paid order #${order.id}`,
+          });
+        }
+      }
+    }
+  }
+
+  return orderReward;
 }

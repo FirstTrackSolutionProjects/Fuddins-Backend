@@ -132,6 +132,33 @@ export async function get__profile_8(req: Request, res: Response) {
 
 }
 
+export async function get__referrals(req: Request, res: Response) {
+  const authUser = (req as AuthenticatedRequest).user;
+  if (!authUser) return res.status(401).json({ error: 'Access token missing' });
+  const user = await User.findByPk(authUser.id, { attributes: ['id', 'referralCode'] });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+    const [referrals, totalInvited, rewards] = await Promise.all([User.findAll({
+    where: { referredByUserId: user.id, role: 'user' },
+    attributes: ['id', 'name', 'createdAt'],
+    order: [['createdAt', 'DESC']],
+    limit: 100,
+    }), User.count({ where: { referredByUserId: user.id, role: 'user' } }), RewardTransaction.findAll({
+      where: { userId: user.id, type: 'referral', status: 'completed' },
+      attributes: ['points', 'description'],
+    })]);
+    const rewardedIds = new Set(rewards.map((reward) => reward.description?.match(/referralUserId=(\d+)/)?.[1]).filter(Boolean));
+  res.json({
+    referralCode: user.referralCode || `FUDDINS${user.id.toString(36).toUpperCase().padStart(8, '0')}`,
+      totalInvited,
+      earnedCount: rewards.length,
+      earnedPoints: rewards.reduce((sum, reward) => sum + Number(reward.points), 0),
+      referrals: referrals.map((referral) => ({
+        ...referral.toJSON(),
+        rewarded: rewardedIds.has(String(referral.id)),
+      })),
+  });
+}
+
 export async function put__profile_image_11(req: Request, res: Response) {
   const authUser = (req as AuthenticatedRequest).user;
   if (!authUser) return res.status(401).json({ error: 'Access token missing' });
