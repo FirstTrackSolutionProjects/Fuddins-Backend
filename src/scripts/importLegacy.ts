@@ -664,8 +664,12 @@ async function importLegacy() {
   );
 
   let importedUsers = 0;
+  let skippedUsersWithoutEmail = 0;
   for (const item of legacyUsers as LegacyUser[]) {
-    if (!item.email) continue;
+    if (!item.email) {
+      skippedUsersWithoutEmail += 1;
+      continue;
+    }
     const payload = {
       legacyUserId: item.id,
       name: item.displayName || item.email.split('@')[0],
@@ -680,7 +684,7 @@ async function importLegacy() {
     if (existing) await existing.update({ legacyUserId: payload.legacyUserId, name: payload.name, phone: payload.phone, billingAddress: payload.billingAddress, shippingAddress: payload.shippingAddress }); else await User.create(payload);
     importedUsers += 1;
   }
-  console.log(`Users imported: ${importedUsers}`);
+  console.log(`Users imported: ${importedUsers}/${legacyUsers.length}; skipped without email: ${skippedUsersWithoutEmail}`);
 
   console.log('Importing wallet balances...');
   const [legacyWalletBalances] = await connection.query(
@@ -774,10 +778,17 @@ async function importLegacy() {
 
   console.log('Importing orders...');
   let legacyOrders: LegacyOrder[] = [];
+  const hasOrderItems = await tableExists(connection, 'wp_woocommerce_order_items');
   const hasHposOrders = await tableExists(connection, 'wp_wc_orders');
   const hposOrderCount = hasHposOrders ? await tableRowCount(connection, 'wp_wc_orders') : 0;
 
   if (hposOrderCount > 0) {
+    const classicOrderItems = hasOrderItems
+      ? `(SELECT GROUP_CONCAT(CONCAT(oi.order_item_name, ' x ', COALESCE(qty.meta_value, 1)) SEPARATOR '\n')
+          FROM wp_woocommerce_order_items oi
+          LEFT JOIN wp_woocommerce_order_itemmeta qty ON oi.order_item_id = qty.order_item_id AND qty.meta_key = '_qty'
+          WHERE oi.order_id = o.id AND oi.order_item_type = 'line_item')`
+      : 'NULL';
     const [orderRows] = await connection.query(
       `SELECT
          o.id id,
@@ -793,10 +804,13 @@ async function importLegacy() {
          CASE WHEN o.status IN ('wc-completed', 'wc-processing') THEN 'paid' ELSE 'pending' END paymentStatus,
          CONCAT_WS(', ', billing.address_1, billing.address_2, billing.city, billing.state, billing.postcode, billing.country) billingAddress,
          CONCAT_WS(', ', shipping.address_1, shipping.address_2, shipping.city, shipping.state, shipping.postcode, shipping.country) shippingAddress,
-         (SELECT GROUP_CONCAT(CONCAT(COALESCE(productPost.post_title, CONCAT('Product #', product.product_id)), ' x ', product.product_qty) SEPARATOR ', ')
-          FROM wp_wc_order_product_lookup product
-          LEFT JOIN wp_posts productPost ON productPost.ID = product.product_id
-          WHERE product.order_id = o.id) items,
+         COALESCE(
+           (SELECT GROUP_CONCAT(CONCAT(COALESCE(productPost.post_title, CONCAT('Product #', product.product_id)), ' x ', product.product_qty) SEPARATOR '\n')
+            FROM wp_wc_order_product_lookup product
+            LEFT JOIN wp_posts productPost ON productPost.ID = product.product_id
+            WHERE product.order_id = o.id),
+           ${classicOrderItems}
+         ) items,
          (SELECT GROUP_CONCAT(couponPost.post_title SEPARATOR ',')
           FROM wp_wc_order_coupon_lookup coupon
           LEFT JOIN wp_posts couponPost ON couponPost.ID = coupon.coupon_id
@@ -809,9 +823,8 @@ async function importLegacy() {
     );
     legacyOrders = orderRows as LegacyOrder[];
   } else {
-    const hasOrderItems = await tableExists(connection, 'wp_woocommerce_order_items');
     const itemFields = hasOrderItems
-      ? `(SELECT GROUP_CONCAT(CONCAT(oi.order_item_name, ' x ', COALESCE(qty.meta_value, 1)) SEPARATOR ', ')
+      ? `(SELECT GROUP_CONCAT(CONCAT(oi.order_item_name, ' x ', COALESCE(qty.meta_value, 1)) SEPARATOR '\n')
           FROM wp_woocommerce_order_items oi
           LEFT JOIN wp_woocommerce_order_itemmeta qty ON oi.order_item_id = qty.order_item_id AND qty.meta_key = '_qty'
           WHERE oi.order_id = p.ID AND oi.order_item_type = 'line_item') items,
@@ -861,6 +874,7 @@ async function importLegacy() {
   }
 
   let importedOrders = 0;
+  let importedOrdersWithItems = 0;
   console.log(`Orders found: ${legacyOrders.length}`);
   for (const item of legacyOrders) {
     const email = item.email?.trim().toLowerCase() || `legacy-order-${item.id}@legacy.local`;
@@ -869,6 +883,13 @@ async function importLegacy() {
     const shippingTotal = numberOrNull(item.shippingTotal) || 0;
     const taxTotal = numberOrNull(item.taxTotal) || 0;
     const subtotal = Math.max(total + discountTotal - shippingTotal - taxTotal, 0);
+    const parsedItems = (item.items || '').split('\n').filter(Boolean).map((line) => {
+      const match = line.match(/^(.*) x (\d+(?:\.\d+)?)$/);
+      return {
+        name: match?.[1] || line,
+        quantity: match ? Number(match[2]) : 1,
+      };
+    });
     const payload = {
       legacyOrderId: item.id,
       customerName: cleanText(item.customerName) || email.split('@')[0],
@@ -879,7 +900,7 @@ async function importLegacy() {
       discountTotal,
       shippingTotal,
       taxTotal,
-      items: JSON.stringify((item.items || '').split(', ').filter(Boolean).map((line) => ({ name: line, quantity: 1 }))),
+      items: JSON.stringify(parsedItems),
       status: item.status?.replace(/^wc-/, '') || 'pending',
       couponCode: item.couponCode || null,
       billingAddress: item.billingAddress || null,
@@ -891,8 +912,9 @@ async function importLegacy() {
     const order = existing ? await existing.update(payload) : await Order.create(payload);
     await ensureInvoice(order);
     importedOrders += 1;
+    if (parsedItems.length) importedOrdersWithItems += 1;
   }
-  console.log(`Orders imported: ${importedOrders}`);
+  console.log(`Orders imported: ${importedOrders}; with line items: ${importedOrdersWithItems}`);
 
   console.log('Importing vendor settlements...');
   let importedSettlements = 0;
