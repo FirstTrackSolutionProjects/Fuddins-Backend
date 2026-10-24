@@ -20,8 +20,8 @@ export async function listBanners(_req: Request, res: Response) {
 
 export async function createBanner(req: Request, res: Response) {
   const { title, subtitle, imageUrl, linkUrl, sortOrder } = req.body;
-  if (typeof title !== 'string' || !title.trim() || typeof imageUrl !== 'string' || !imageUrl.trim()) return res.status(400).json({ error: 'Title and image are required' });
-  res.status(201).json(await Banner.create({ title: title.trim(), subtitle: typeof subtitle === 'string' ? subtitle.trim() || null : null, imageUrl: imageUrl.trim(), linkUrl: typeof linkUrl === 'string' ? linkUrl.trim() || null : null, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0 }));
+  if (typeof imageUrl !== 'string' || !imageUrl.trim()) return res.status(400).json({ error: 'Banner image is required' });
+  res.status(201).json(await Banner.create({ title: typeof title === 'string' ? title.trim() : '', subtitle: typeof subtitle === 'string' ? subtitle.trim() || null : null, imageUrl: imageUrl.trim(), linkUrl: typeof linkUrl === 'string' ? linkUrl.trim() || null : null, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : 0 }));
 }
 
 export async function updateBanner(req: Request, res: Response) {
