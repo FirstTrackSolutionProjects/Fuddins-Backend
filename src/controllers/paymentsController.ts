@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { Op } from 'sequelize';
 import Order from '../models/Order.js';
@@ -6,10 +7,12 @@ import Product from '../models/Product.js';
 import Coupon from '../models/Coupon.js';
 import Vendor from '../models/Vendor.js';
 import ShoppingCardApplication from '../models/ShoppingCardApplication.js';
+import WalletTransaction from '../models/WalletTransaction.js';
 import { sendOrderCreatedEmails, sendPaymentReceipt } from '../services/email.js';
 import { ensureInvoice } from '../services/invoice.js';
 import { awardOrderRewards, redeemOrderBalances, refundOrderBalances, validateOrderRedemption } from '../services/loyalty.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
+import { walletBalance } from '../services/loyalty.js';
 
 type CartLine = { productId: number; variationId?: number | null; quantity: number };
 type ProductVariation = {
@@ -28,6 +31,27 @@ export function razorpayConfig() {
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   if (!keyId || !keySecret) throw new Error('Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.');
   return { keyId, keySecret };
+}
+
+export async function createWalletTopUp(req: Request, res: Response) {
+  try {
+    const user = (req as AuthenticatedRequest).user;
+    if (!user) return res.status(401).json({ error: 'Please login to add wallet money' });
+    const amount = Number(req.body.amount);
+    if (!Number.isFinite(amount) || amount < 10 || amount > 50000) return res.status(400).json({ error: 'Enter an amount between Rs. 10 and Rs. 50,000' });
+    const { keyId, keySecret } = razorpayConfig();
+    const reference = randomUUID();
+    const response = await fetch('https://api.razorpay.com/v1/payment_links', {
+      method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Math.round(amount * 100), currency: 'INR', reference_id: `wallet_${reference}`, description: 'Fuddins wallet top-up', customer: { email: user.email }, notify: { sms: false, email: false }, reminder_enable: false, expire_by: Math.floor(Date.now() / 1000) + 30 * 60, notes: { wallet_topup_ref: reference, user_id: String(user.id) } }),
+    });
+    const link = await response.json() as { id?: string; short_url?: string; error?: { description?: string } };
+    if (!response.ok || !link.id || !link.short_url) return res.status(502).json({ error: link.error?.description || 'Unable to create wallet payment link' });
+    await WalletTransaction.create({ userId: user.id, type: 'top_up', amount, balanceAfter: await walletBalance(user.id), description: `Wallet top-up pending:${reference}`, status: 'pending' });
+    res.status(201).json({ paymentUrl: link.short_url, amount });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unable to start wallet top-up' });
+  }
 }
 
 async function calculateItems(items: CartLine[]) {
@@ -196,10 +220,20 @@ export async function razorpayWebhook(req: Request, res: Response) {
   const receivedSignature = Buffer.from(signature); const expectedSignatureBuffer = Buffer.from(expectedSignature);
   if (receivedSignature.length !== expectedSignatureBuffer.length || !crypto.timingSafeEqual(receivedSignature, expectedSignatureBuffer)) return res.status(400).json({ error: 'Invalid webhook signature' });
   try {
-    const event = JSON.parse(rawBody.toString()) as { event?: string; payload?: { payment_link?: { entity?: { id?: string; status?: string } }; payment?: { entity?: { id?: string } } } };
+    const event = JSON.parse(rawBody.toString()) as { event?: string; payload?: { payment_link?: { entity?: { id?: string; status?: string; notes?: Record<string, string> } }; payment?: { entity?: { id?: string } } } };
     const paymentLink = event.payload?.payment_link?.entity;
     if (paymentLink?.id) {
       const status = event.event === 'payment_link.paid' || paymentLink.status === 'paid' ? 'paid' : paymentLink.status === 'cancelled' || paymentLink.status === 'expired' ? 'failed' : 'pending';
+      const topUpReference = paymentLink.notes?.wallet_topup_ref;
+      if (topUpReference && status === 'paid') {
+        const topUp = await WalletTransaction.findOne({ where: { type: 'top_up', status: 'pending', description: `Wallet top-up pending:${topUpReference}` } });
+        if (topUp?.userId) {
+          const balanceAfter = await walletBalance(topUp.userId) + Number(topUp.amount);
+          await topUp.update({ status: 'completed', balanceAfter, description: `Wallet top-up paid (Razorpay payment ${event.payload?.payment?.entity?.id || 'confirmed'})` });
+        }
+      } else if (topUpReference && status === 'failed') {
+        await WalletTransaction.update({ status: 'failed', description: `Wallet top-up failed:${topUpReference}` }, { where: { type: 'top_up', status: 'pending', description: `Wallet top-up pending:${topUpReference}` } });
+      }
       const order = await Order.findOne({ where: { paymentLinkId: paymentLink.id } });
       if (order) {
         const wasPaid = order.paymentStatus === 'paid';

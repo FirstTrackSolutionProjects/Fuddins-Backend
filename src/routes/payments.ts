@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
-import { optionalAuthenticateToken } from '../middleware/auth.js';
+import { authenticateToken, optionalAuthenticateToken } from '../middleware/auth.js';
 import {
+  createWalletTopUp,
   createRazorpayPaymentLink,
   getPaymentStatus,
   razorpayWebhook,
@@ -9,6 +10,7 @@ import {
 const router = Router();
 
 router.post('/razorpay/webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
+router.post('/wallet/top-up', authenticateToken, createWalletTopUp);
 router.post('/razorpay/payment-link', optionalAuthenticateToken, createRazorpayPaymentLink);
 router.get('/orders/:id/status', getPaymentStatus);
 
